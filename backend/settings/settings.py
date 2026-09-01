@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    # Regenerates docs/schema.dbml from the models after every migrate.
+    'schemadocs',
     'accounts',
     'catalog',
     'protocols',

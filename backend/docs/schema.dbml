@@ -1,110 +1,272 @@
-// Gym app schema — design source of truth.
-// Render: paste into https://dbdiagram.io  (or `npx @dbml/cli dbml2sql schema.dbml --postgres`)
+// Gym app database schema.
+// GENERATED FROM THE DJANGO MODELS — do not hand-edit; regenerate instead.
+// Source: the Django app registry (model._meta), via manage.py export_dbml.
+// Render: paste into https://dbdiagram.io
 
 Project gym_app {
   database_type: 'PostgreSQL'
-  Note: 'Workout tracking. Nothing here is implemented yet — this file is the design.'
+  Note: '''
+Workout tracking. Every table, column, type, index and relationship below is
+read directly off the Django models, so this file mirrors them exactly.
+Column types are the SQL Django emits on PostgreSQL; the development database
+is SQLite (settings.DATABASES['default'] = django.db.backends.sqlite3),
+whose affinities are looser but structurally identical.
+Django-level delete behaviour (on_delete=...) is recorded as a column note,
+since DBML has no way to express it.
+'''
 }
 
-Table user {
-  id    uuid [pk, default: `gen_random_uuid()`]
-  email varchar(255) [not null, unique]
-}
+// ==========================================================================
+// app: catalog  (project)
+// ==========================================================================
 
-// One user has many training sessions.
-Table training_session {
-  id            uuid [pk, default: `gen_random_uuid()`]
-  user_id       uuid [not null, ref: > user.id]
-  type          session_type [not null]
-  created_at    timestamptz  [not null, default: `now()`]
-
-  indexes {
-    (user_id, created_at)
-  }
-}
-
-// The exercise catalogue: one row per movement, referenced by performed_exercise.
-Table exercise_definition {
-  id         uuid [pk, default: `gen_random_uuid()`]
+Table catalog_exercisedefinition {
+  id         uuid         [pk, note: 'default set in Python: uuid.uuid4()']
   name       varchar(120) [not null, unique]
-  created_at timestamptz [not null, default: `now()`]
+  created_at timestamptz  [not null, note: 'set to now() on insert (auto_now_add)']
+
+  Note: 'The exercise catalogue: one row per movement, referenced by PerformedExercise.'
 }
 
-// One prescription, referenced by many performed_exercise rows.
-Table exercise_prescription {
-  id uuid [pk, default: `gen_random_uuid()`]
-}
+// ==========================================================================
+// app: observations  (project)
+// ==========================================================================
 
-// One movement as actually performed in one session.
-// Many per training_session; many can reference the same exercise_definition.
-Table performed_exercise {
-  id                       uuid [pk, default: `gen_random_uuid()`]
-  training_session_id      uuid [not null, ref: > training_session.id]
-  exercise_definition_id   uuid [not null, ref: > exercise_definition.id]
-  exercise_prescription_id uuid [null, ref: > exercise_prescription.id]
-  created_at               timestamptz [not null, default: `now()`, note: 'also the order within the session']
+Table observations_performedexercise {
+  id                       uuid        [pk, note: 'default set in Python: uuid.uuid4()']
+  training_session_id      uuid        [not null, ref: > observations_trainingsession.id, note: 'on_delete=CASCADE']
+  exercise_definition_id   uuid        [not null, ref: > catalog_exercisedefinition.id, note: 'on_delete=PROTECT']
+  exercise_prescription_id uuid        [null, ref: > protocols_exerciseprescription.id, note: 'on_delete=SET_NULL']
+  created_at               timestamptz [not null, note: 'set to now() on insert (auto_now_add)']
 
   indexes {
-    (training_session_id, created_at)
-    (exercise_definition_id)
+    training_session_id [note: 'implicit: Django indexes every ForeignKey column']
+    exercise_definition_id [note: 'implicit: Django indexes every ForeignKey column']
+    exercise_prescription_id [note: 'implicit: Django indexes every ForeignKey column']
+    (training_session_id, created_at) [name: 'perfex_session_created_idx']
+  }
+
+  Note: 'One movement as actually performed in one session. Many per TrainingSession; many can reference the same ExerciseDefinition.'
+}
+
+Table observations_performedrep {
+  id               uuid    [pk, note: 'default set in Python: uuid.uuid4()']
+  performed_set_id uuid    [not null, ref: > observations_performedset.id, note: 'on_delete=CASCADE']
+  rep_index        integer [not null]
+
+  indexes {
+    performed_set_id [note: 'implicit: Django indexes every ForeignKey column']
+    (performed_set_id, rep_index) [unique, name: 'perfrep_set_rep_index_uniq']
+  }
+
+  Note: 'One rep of one PerformedSet. Many reps per PerformedSet.'
+}
+
+Table observations_performedset {
+  id                    uuid         [pk, note: 'default set in Python: uuid.uuid4()']
+  performed_exercise_id uuid         [not null, ref: > observations_performedexercise.id, note: 'on_delete=CASCADE']
+  weight_kg             numeric(6,2) [null]
+  reps                  integer      [null]
+  distance_m            numeric(9,2) [null]
+  duration_s            integer      [null]
+  rpe                   numeric(3,1) [null]
+  created_at            timestamptz  [not null, note: 'set to now() on insert (auto_now_add)']
+
+  indexes {
+    performed_exercise_id [note: 'implicit: Django indexes every ForeignKey column']
+    (performed_exercise_id, created_at) [name: 'perfset_exercise_created_idx']
+  }
+
+  Note: 'One set of one PerformedExercise. Many sets per PerformedExercise.'
+}
+
+Table observations_trainingsession {
+  id         uuid        [pk, note: 'default set in Python: uuid.uuid4()']
+  user_id    integer     [not null, ref: > auth_user.id, note: 'on_delete=CASCADE']
+  type       varchar(8)  [not null]
+  created_at timestamptz [not null, note: 'set to now() on insert (auto_now_add)']
+
+  indexes {
+    user_id [note: 'implicit: Django indexes every ForeignKey column']
+    (user_id, created_at) [name: 'trainsess_user_created_idx']
+  }
+
+  Note: 'One user has many training sessions.'
+}
+
+// ==========================================================================
+// app: protocols  (project)
+// ==========================================================================
+
+Table protocols_exerciseprescription {
+  id uuid [pk, note: 'default set in Python: uuid.uuid4()']
+
+  Note: 'One prescription, referenced by many PerformedExercise rows. The DBML declares this table with an `id` column and nothing else, so this model is a bare primary key. Left as-is rather than inventing columns.'
+}
+
+// ==========================================================================
+// app: admin
+// ==========================================================================
+
+Table django_admin_log {
+  id              integer      [pk]
+  action_time     timestamptz  [not null, note: 'default set in Python: django.utils.timezone.now()']
+  user_id         integer      [not null, ref: > auth_user.id, note: 'on_delete=CASCADE']
+  content_type_id integer      [null, ref: > django_content_type.id, note: 'on_delete=SET_NULL']
+  object_id       text         [null]
+  object_repr     varchar(200) [not null]
+  action_flag     smallint     [not null, note: 'choices: 1, 2, 3']
+  change_message  text         [not null]
+
+  indexes {
+    user_id [note: 'implicit: Django indexes every ForeignKey column']
+    content_type_id [note: 'implicit: Django indexes every ForeignKey column']
   }
 }
 
-// One set of one performed_exercise. Many sets per performed_exercise.
-Table performed_set {
-  id                    uuid [pk, default: `gen_random_uuid()`]
-  performed_exercise_id uuid [not null, ref: > performed_exercise.id]
-  weight_kg             decimal(6,2) [null, note: 'always stored metric; convert at display time']
-  reps                  int [null]
-  distance_m            decimal(9,2) [null, note: 'always stored metric; convert at display time']
-  duration_s            int [null, note: 'for time-based work instead of reps']
-  rpe                   decimal(3,1) [null]
-  created_at            timestamptz [not null, default: `now()`, note: 'also the order within the performed_exercise']
+// ==========================================================================
+// app: auth
+// ==========================================================================
+
+Table auth_group {
+  id   integer      [pk]
+  name varchar(150) [not null, unique]
+
+  Note: 'Groups are a generic way of categorizing users to apply permissions, or some other label, to those users.'
+}
+
+Table auth_group_permissions {
+  id            integer [pk]
+  group_id      integer [not null, ref: > auth_group.id, note: 'on_delete=CASCADE']
+  permission_id integer [not null, ref: > auth_permission.id, note: 'on_delete=CASCADE']
 
   indexes {
-    (performed_exercise_id, created_at)
+    group_id [note: 'implicit: Django indexes every ForeignKey column']
+    permission_id [note: 'implicit: Django indexes every ForeignKey column']
+    (group_id, permission_id) [unique]
   }
 }
 
-// One rep of one performed_set. Many reps per performed_set.
-Table performed_rep {
-  id               uuid [pk, default: `gen_random_uuid()`]
-  performed_set_id uuid [not null, ref: > performed_set.id]
-  rep_index        int  [not null, note: 'ordinal within the performed_set']
+Table auth_permission {
+  id              integer      [pk]
+  name            varchar(255) [not null]
+  content_type_id integer      [not null, ref: > django_content_type.id, note: 'on_delete=CASCADE']
+  codename        varchar(100) [not null]
 
   indexes {
-    (performed_set_id, rep_index) [unique]
+    content_type_id [note: 'implicit: Django indexes every ForeignKey column']
+    (content_type_id, codename) [unique]
+  }
+
+  Note: 'The permissions system provides a way to assign permissions to specific users and groups of users.'
+}
+
+Table auth_user {
+  id           integer      [pk]
+  password     varchar(128) [not null]
+  last_login   timestamptz  [null]
+  is_superuser boolean      [not null, default: `false`, note: 'Designates that this user has all permissions without explicitly assigning them.']
+  username     varchar(150) [not null, unique, note: 'Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only.']
+  first_name   varchar(150) [not null]
+  last_name    varchar(150) [not null]
+  email        varchar(254) [not null]
+  is_staff     boolean      [not null, default: `false`, note: 'Designates whether the user can log into this admin site.']
+  is_active    boolean      [not null, default: `true`, note: 'Designates whether this user should be treated as active. Unselect this instead of deleting accounts.']
+  date_joined  timestamptz  [not null, note: 'default set in Python: django.utils.timezone.now()']
+
+  Note: 'Users within the Django authentication system are represented by this model.'
+}
+
+Table auth_user_groups {
+  id       integer [pk]
+  user_id  integer [not null, ref: > auth_user.id, note: 'on_delete=CASCADE']
+  group_id integer [not null, ref: > auth_group.id, note: 'on_delete=CASCADE']
+
+  indexes {
+    user_id [note: 'implicit: Django indexes every ForeignKey column']
+    group_id [note: 'implicit: Django indexes every ForeignKey column']
+    (user_id, group_id) [unique]
   }
 }
 
-Enum unit_system {
-  metric
-  imperial
+Table auth_user_user_permissions {
+  id            integer [pk]
+  user_id       integer [not null, ref: > auth_user.id, note: 'on_delete=CASCADE']
+  permission_id integer [not null, ref: > auth_permission.id, note: 'on_delete=CASCADE']
+
+  indexes {
+    user_id [note: 'implicit: Django indexes every ForeignKey column']
+    permission_id [note: 'implicit: Django indexes every ForeignKey column']
+    (user_id, permission_id) [unique]
+  }
 }
 
-Enum session_type {
-  strength
-  cardio
-  mobility
-  mixed
+// ==========================================================================
+// app: contenttypes
+// ==========================================================================
+
+Table django_content_type {
+  id        integer      [pk]
+  app_label varchar(100) [not null]
+  model     varchar(100) [not null]
+
+  indexes {
+    (app_label, model) [unique]
+  }
 }
 
-Enum modality {
-  barbell
-  dumbbell
-  machine
-  bodyweight
-  cardio
+// ==========================================================================
+// app: sessions
+// ==========================================================================
+
+Table django_session {
+  session_key  varchar(40) [pk]
+  session_data text        [not null]
+  expire_date  timestamptz [not null]
+
+  indexes {
+    expire_date
+  }
+
+  Note: 'Django provides full support for anonymous sessions.'
 }
 
-Enum muscle_group {
-  chest
-  back
-  shoulders
-  quads
-  hamstrings
-  glutes
-  arms
-  core
-  full_body
+// ==========================================================================
+// Table groups
+// ==========================================================================
+
+TableGroup catalog {
+  catalog_exercisedefinition
+}
+
+TableGroup observations {
+  observations_performedexercise
+  observations_performedrep
+  observations_performedset
+  observations_trainingsession
+}
+
+TableGroup protocols {
+  protocols_exerciseprescription
+}
+
+TableGroup admin {
+  django_admin_log
+}
+
+TableGroup auth {
+  auth_group
+  auth_group_permissions
+  auth_permission
+  auth_user
+  auth_user_groups
+  auth_user_user_permissions
+}
+
+TableGroup contenttypes {
+  django_content_type
+}
+
+TableGroup sessions {
+  django_session
 }

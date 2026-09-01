@@ -1,12 +1,103 @@
 {
   "version": "3.0.0",
-  "darkMode": false,
+  "darkMode": true,
   "gridEnabling": false,
   "currentViewName": null,
   "defaultView": {
     "detailLevel": "All",
     "relationshipMode": "All",
-    "tablePositions": [],
+    "tablePositions": [
+      {
+        "name": "catalog_exercisedefinition",
+        "schemaName": "public",
+        "x": 652.1061043654302,
+        "y": 292.7490322734002
+      },
+      {
+        "name": "observations_performedexercise",
+        "schemaName": "public",
+        "x": 1202.82470703125,
+        "y": 226
+      },
+      {
+        "name": "observations_performedrep",
+        "schemaName": "public",
+        "x": 2290.8720703125,
+        "y": 226
+      },
+      {
+        "name": "observations_performedset",
+        "schemaName": "public",
+        "x": 1745.94580078125,
+        "y": 226
+      },
+      {
+        "name": "observations_trainingsession",
+        "schemaName": "public",
+        "x": 654.2272554064323,
+        "y": 14.045260438160682
+      },
+      {
+        "name": "protocols_exerciseprescription",
+        "schemaName": "public",
+        "x": 718.9064820482722,
+        "y": 541.3282394865653
+      },
+      {
+        "name": "django_admin_log",
+        "schemaName": "public",
+        "x": 46.63991035368433,
+        "y": 1197.3195534666652
+      },
+      {
+        "name": "auth_group",
+        "schemaName": "public",
+        "x": 12,
+        "y": 510
+      },
+      {
+        "name": "auth_group_permissions",
+        "schemaName": "public",
+        "x": 56.110562847190366,
+        "y": 1297.5071465934882
+      },
+      {
+        "name": "auth_permission",
+        "schemaName": "public",
+        "x": 210.94522056513165,
+        "y": 1221.5355831721658
+      },
+      {
+        "name": "auth_user",
+        "schemaName": "public",
+        "x": 25.692109184287304,
+        "y": 699.9223821450055
+      },
+      {
+        "name": "auth_user_groups",
+        "schemaName": "public",
+        "x": 38.3212890625,
+        "y": 310.711513648036
+      },
+      {
+        "name": "auth_user_user_permissions",
+        "schemaName": "public",
+        "x": -121.88685654854429,
+        "y": 1209.6455584439939
+      },
+      {
+        "name": "django_content_type",
+        "schemaName": "public",
+        "x": 12,
+        "y": 1082
+      },
+      {
+        "name": "django_session",
+        "schemaName": "public",
+        "x": 12,
+        "y": 12
+      }
+    ],
     "tableGroupCollapseStates": [],
     "stickyNoteLayouts": [],
     "referencePaths": []
