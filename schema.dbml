@@ -6,94 +6,86 @@ Project gym_app {
   Note: 'Workout tracking. Nothing here is implemented yet — this file is the design.'
 }
 
-Table users {
-  id           uuid [pk, default: `gen_random_uuid()`]
-  email        varchar(255) [not null, unique]
-  display_name varchar(80)  [not null]
-  unit_system  unit_system  [not null, default: 'metric']
-  created_at   timestamptz  [not null, default: `now()`]
+Table user {
+  id    uuid [pk, default: `gen_random_uuid()`]
+  email varchar(255) [not null, unique]
 }
 
-// The exercise catalogue. Global rows have owner_id = null;
-// a user-defined movement carries their id.
-Table exercises {
-  id            uuid [pk]
-  owner_id      uuid [ref: > users.id, null]
-  name          varchar(120) [not null]
-  modality      modality     [not null]
-  primary_muscle muscle_group [not null]
+// One user has many training sessions.
+Table training_session {
+  id            uuid [pk, default: `gen_random_uuid()`]
+  user_id       uuid [not null, ref: > user.id]
+  type          session_type [not null]
   created_at    timestamptz  [not null, default: `now()`]
 
   indexes {
-    (owner_id, name) [unique]
+    (user_id, created_at)
   }
 }
 
-// A reusable plan: "Upper A", "5x5 Squat Day".
-Table routines {
-  id         uuid [pk]
-  user_id    uuid [not null, ref: > users.id]
-  name       varchar(120) [not null]
-  archived_at timestamptz [null]
+// The exercise catalogue: one row per movement, referenced by performed_exercise.
+Table exercise {
+  id             uuid [pk, default: `gen_random_uuid()`]
+  name           varchar(120) [not null, unique]
+  modality       modality     [not null]
+  primary_muscle muscle_group [not null]
+  created_at     timestamptz  [not null, default: `now()`]
 }
 
-Table routine_items {
-  id          uuid [pk]
-  routine_id  uuid [not null, ref: > routines.id]
-  exercise_id uuid [not null, ref: > exercises.id]
-  position    int  [not null]
-  target_sets int  [null]
-  target_reps int  [null]
+// One movement as actually performed in one session.
+// Many per training_session; many can reference the same exercise.
+Table performed_exercise {
+  id                  uuid [pk, default: `gen_random_uuid()`]
+  training_session_id uuid [not null, ref: > training_session.id]
+  exercise_id         uuid [not null, ref: > exercise.id]
+  position            int  [not null, note: 'ordinal within the session']
+  created_at          timestamptz [not null, default: `now()`]
 
   indexes {
-    (routine_id, position) [unique]
-  }
-}
-
-// An actual session that happened. routine_id is the plan it came from, if any.
-Table workouts {
-  id          uuid [pk]
-  user_id     uuid [not null, ref: > users.id]
-  routine_id  uuid [null, ref: > routines.id]
-  started_at  timestamptz [not null]
-  finished_at timestamptz [null]
-  notes       text [null]
-
-  indexes {
-    (user_id, started_at)
-  }
-}
-
-Table workout_sets {
-  id          uuid [pk]
-  workout_id  uuid [not null, ref: > workouts.id]
-  exercise_id uuid [not null, ref: > exercises.id]
-  set_index   int  [not null, note: 'ordinal within the workout']
-  weight_kg   decimal(6,2) [null, note: 'always stored metric; unit_system is display-only']
-  reps        int [null]
-  duration_s  int [null, note: 'for time-based work instead of reps']
-  rpe         decimal(3,1) [null]
-  is_warmup   boolean [not null, default: false]
-
-  indexes {
-    (workout_id, set_index) [unique]
+    (training_session_id, position) [unique]
     (exercise_id)
   }
 }
 
-Table body_measurements {
-  id           uuid [pk]
-  user_id      uuid [not null, ref: > users.id]
-  measured_on  date [not null]
-  weight_kg    decimal(5,2) [null]
-  bodyfat_pct  decimal(4,1) [null]
+// One set of one performed_exercise. Many sets per performed_exercise.
+Table performed_set {
+  id                    uuid [pk, default: `gen_random_uuid()`]
+  performed_exercise_id uuid [not null, ref: > performed_exercise.id]
+  set_index             int  [not null, note: 'ordinal within the performed_exercise']
+  weight_kg             decimal(6,2) [null, note: 'always stored metric; convert at display time']
+  reps                  int [null]
+  distance_m            decimal(9,2) [null, note: 'always stored metric; convert at display time']
+  duration_s            int [null, note: 'for time-based work instead of reps']
+  rpe                   decimal(3,1) [null]
+  is_warmup             boolean [not null, default: false]
 
   indexes {
-    (user_id, measured_on) [unique]
+    (performed_exercise_id, set_index) [unique]
   }
 }
 
-Enum unit_system { metric imperial }
+// One rep of one performed_set. Many reps per performed_set.
+Table performed_rep {
+  id               uuid [pk, default: `gen_random_uuid()`]
+  performed_set_id uuid [not null, ref: > performed_set.id]
+  rep_index        int  [not null, note: 'ordinal within the performed_set']
+
+  indexes {
+    (performed_set_id, rep_index) [unique]
+  }
+}
+
+Enum unit_system {
+  metric
+  imperial
+}
+
+Enum session_type {
+  strength
+  cardio
+  mobility
+  mixed
+}
 
 Enum modality {
   barbell
@@ -104,9 +96,13 @@ Enum modality {
 }
 
 Enum muscle_group {
-  chest back shoulders quads hamstrings glutes arms core full_body
+  chest
+  back
+  shoulders
+  quads
+  hamstrings
+  glutes
+  arms
+  core
+  full_body
 }
-
-TableGroup catalogue { exercises }
-TableGroup planning  { routines routine_items }
-TableGroup logging   { workouts workout_sets body_measurements }
