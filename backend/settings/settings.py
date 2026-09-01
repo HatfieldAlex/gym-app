@@ -15,6 +15,10 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Repository root, so sibling packages (frontend-web/) can be referenced.
+REPO_DIR = BASE_DIR.parent
+FRONTEND_WEB_DIR = REPO_DIR / 'frontend-web'
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
@@ -57,7 +61,7 @@ ROOT_URLCONF = 'settings.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [FRONTEND_WEB_DIR],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
