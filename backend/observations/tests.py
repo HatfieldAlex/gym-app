@@ -143,15 +143,3 @@ class PerformedSetAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(PerformedSet.objects.exists())
 
-
-class TrainingSessionPageTests(APITestCase):
-    @classmethod
-    def setUpTestData(cls):
-        cls.user = get_user_model().objects.create_user('lifter', password='pw')
-        TrainingSession.objects.create(user=cls.user, type='legs')
-
-    def test_page_is_a_shell_without_the_data(self):
-        self.client.force_login(self.user)
-        response = self.client.get(reverse('training_sessions'))
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertNotContains(response, 'legs')

@@ -3,6 +3,7 @@
 Versioned under /api/v1/ so a breaking change can ship alongside the old shape
 rather than in place of it.
 """
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from catalog.views import ExerciseDefinitionViewSet
@@ -21,4 +22,8 @@ router.register('performed-exercises', PerformedExerciseViewSet, basename='perfo
 router.register('performed-sets', PerformedSetViewSet, basename='performedset')
 
 app_name = 'api'
-urlpatterns = router.urls
+urlpatterns = [
+    # Session login/logout/whoami for the SPA, which no longer has a
+    # server-rendered login form to post to.
+    path('auth/', include('accounts.urls')),
+] + router.urls

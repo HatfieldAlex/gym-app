@@ -18,6 +18,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Repository root, so sibling packages (frontend-web/) can be referenced.
 REPO_DIR = BASE_DIR.parent
 FRONTEND_WEB_DIR = REPO_DIR / 'frontend-web'
+# Vite's build output: index.html is the SPA shell, assets/ its bundles.
+FRONTEND_WEB_DIST = FRONTEND_WEB_DIR / 'dist'
 
 
 # Quick-start development settings - unsuitable for production
@@ -42,6 +44,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'accounts',
     'catalog',
     'protocols',
     'observations',
@@ -62,7 +65,9 @@ ROOT_URLCONF = 'settings.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [FRONTEND_WEB_DIR],
+        # The SPA shell is served from disk by settings.views.spa, not
+        # rendered; the only templates left are the admin's own.
+        'DIRS': [],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -147,6 +152,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Vite builds with base='/static/', so its hashed bundles resolve here.
+STATICFILES_DIRS = [FRONTEND_WEB_DIST] if FRONTEND_WEB_DIST.is_dir() else []
+
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
@@ -161,7 +169,7 @@ MAILERS = {
 # Authentication
 # https://docs.djangoproject.com/en/6.1/topics/auth/default/#module-django.contrib.auth.views
 
-# Defaults are /accounts/profile/ and the login page respectively; neither is
-# wanted here, so both ends of a session land back on the home page.
-LOGIN_REDIRECT_URL = '/'
-LOGOUT_REDIRECT_URL = '/'
+# Sessions are started and ended over JSON by accounts/, and the redirects
+# afterwards are the SPA router's business. All that is left for Django is
+# where to send a server-side redirect to sign in -- the SPA's login route.
+LOGIN_URL = '/login'
