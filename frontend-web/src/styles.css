@@ -84,8 +84,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
    header three rows up is no help. */
 .completed-exercises { margin-top: 2rem; }
 .completed-exercises .performed h3 { margin: 0 0 .25rem; font-size: 1.1rem; }
-.completed-exercises .sets { list-style: none; margin: 0; padding: 0; }
-.completed-exercises .set {
+/* Scoped to the list, not to the section: the held exercise renders the same
+   rows above, from the same component. The detail page's `.sets` is a table, so
+   these rules name the element they are for. */
+ol.sets { list-style: none; margin: 0; padding: 0; }
+ol.sets .set {
     display: flex;
     align-items: center;
     gap: .75rem;
@@ -96,14 +99,17 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     padding: .25rem 3.5rem .25rem 0;
     border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
-.completed-exercises .set-number { min-width: 1.25rem; opacity: .7; }
+ol.sets .set-number { min-width: 1.25rem; opacity: .7; }
 
 .record-set { margin-top: 1.5rem; }
 .record-set select { font: inherit; padding: .4rem .5rem; }
 /* A held exercise is what the section is about, not a value sitting in a
    widget, so it reads as a block with the movement's name at the top of it. */
 .held-exercise { margin-top: .5rem; }
-.held-exercise .held-name { font-size: 1.25rem; font-weight: 600; opacity: 1; }
+.held-exercise .held-name { font-size: 1.25rem; font-weight: 600; opacity: 1; margin-bottom: .5rem; }
+/* Its sets sit directly under the name, so the record of the movement reads as
+   part of the block rather than as a list that happens to follow it. */
+.held-exercise .sets { margin-bottom: .5rem; }
 .held-exercise .change-exercise {
     margin-top: .25rem;
     padding: 0;
@@ -116,6 +122,29 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     text-decoration: underline;
     cursor: pointer;
 }
+
+/* The two boxes sit side by side with the button below them, so logging a set is
+   one glance and one tap rather than a column to scroll through. */
+.log-set { margin: .75rem 0 1rem; }
+.log-set p { margin: 0 .75rem .5rem 0; display: inline-grid; gap: .25rem; vertical-align: top; }
+.log-set label { font-size: .85rem; opacity: .7; }
+.log-set input { font: inherit; padding: .4rem .5rem; width: 6rem; }
+.log-set .status { margin: .5rem 0 0; }
+.log-set-actions { display: flex; align-items: center; gap: 1rem; }
+.log-set-actions .button { margin-top: 0; }
+/* The rarer tap of the two -- once per movement rather than once per set -- so
+   it reads as the quieter one and cannot be mistaken for Log set mid-workout. */
+.log-exercise {
+    padding: .5rem 0;
+    border: 0;
+    font: inherit;
+    color: inherit;
+    background: none;
+    opacity: .7;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.log-exercise[disabled] { opacity: .35; text-decoration: none; cursor: default; }
 
 /* Login */
 .login { margin-top: 1.5rem; display: inline-block; text-align: left; }

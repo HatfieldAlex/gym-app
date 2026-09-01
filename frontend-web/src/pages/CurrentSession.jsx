@@ -17,34 +17,62 @@ function setSummary(set) {
   return weight === null ? `${set.reps} reps` : `${weight} × ${set.reps}`
 }
 
+/** The sets logged into one exercise, numbered 1, 2, 3… by position.
+ *
+ * Both lists on this page come through here — the held exercise's own sets and
+ * the whole workout below it. Same data, two renderings, one phrasing: a set
+ * reads identically in both, and there is no second wording to drift from.
+ *
+ * `performed_sets` arrives in the order the sets were logged, so nothing is
+ * sorted here. An exercise with none says so rather than leaving a gap.
+ */
+function SetList({ sets }) {
+  if (sets.length === 0) return <p>No sets logged yet.</p>
+
+  return (
+    <ol className="sets">
+      {sets.map((set, index) => (
+        <li className="set" key={set.id}>
+          <span className="set-number">{index + 1}</span>
+          <span className="set-measures">{setSummary(set)}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+/** The typed entry as the API wants it, or `null` when it is not a set yet.
+ *
+ * Reps are required and whole and positive (A5) — a set of `0` or `-3` records
+ * nothing. Weight is optional, because bodyweight movements have none, and a
+ * blank one is `null` rather than `0`: no weight is not zero weight. What was
+ * typed is passed through as the string it was typed as, so `62.5` reaches a
+ * decimal column without a float rounding it first.
+ */
+function parseEntry(weight, reps) {
+  if (!/^\d+$/.test(reps.trim()) || Number(reps) < 1) return null
+
+  const typedWeight = weight.trim()
+  if (typedWeight === '') return { weight_kg: null, reps: Number(reps) }
+  // A half-typed weight is a mistake, not a bodyweight set.
+  if (!/^\d+(\.\d+)?$/.test(typedWeight)) return null
+  return { weight_kg: typedWeight, reps: Number(reps) }
+}
+
 /** One exercise of the session, with the sets logged into it so far.
  *
- * The API returns exercises in the order they were first started and their sets
- * in the order they were logged, so both are numbered by position and neither is
- * sorted or grouped here. An exercise whose sets have all been deleted (chunk
- * 05) keeps its heading rather than vanishing.
+ * The API returns exercises in the order they were first started, so they are
+ * numbered by position and neither sorted nor grouped here. An exercise whose
+ * sets have all been deleted (chunk 05) keeps its heading rather than vanishing.
  */
 function PerformedExercise({ performed, index }) {
-  const sets = performed.performed_sets
-
   return (
     <li className="performed">
       <h3>
         {index}. {performed.exercise_name}
       </h3>
 
-      {sets.length === 0 ? (
-        <p>No sets logged yet.</p>
-      ) : (
-        <ol className="sets">
-          {sets.map((set, setIndex) => (
-            <li className="set" key={set.id}>
-              <span className="set-number">{setIndex + 1}</span>
-              <span className="set-measures">{setSummary(set)}</span>
-            </li>
-          ))}
-        </ol>
-      )}
+      <SetList sets={performed.performed_sets} />
     </li>
   )
 }
@@ -82,6 +110,27 @@ export default function CurrentSession() {
   const [heldId, setHeldId] = useState(null)
   const held = exercises?.find((exercise) => exercise.id === heldId) ?? null
 
+  // What has already been done to the held exercise in this session, read off
+  // the same `session` state the list below reads — not a second copy of it.
+  // No block at all is the ordinary case: the exercise has simply not been
+  // trained yet today, and one appears with its first set (03.5).
+  const heldPerformed =
+    session?.performed_exercises.find(
+      (performed) => performed.exercise_definition === heldId,
+    ) ?? null
+  const heldSets = heldPerformed?.performed_sets ?? []
+
+  // What is about to be logged. Kept as typed rather than as numbers, so an
+  // empty box stays empty and a decimal point survives being typed. It outlives
+  // a successful log on purpose (below); only letting go of the exercise
+  // clears it, since what was typed belonged to that movement.
+  const [weight, setWeight] = useState('')
+  const [reps, setReps] = useState('')
+  const entry = parseEntry(weight, reps)
+
+  const [logging, setLogging] = useState(false)
+  const [logError, setLogError] = useState(null)
+
   const [starting, setStarting] = useState(false)
   // <Status> speaks for the initial load, so a failed start needs its own line.
   const [startError, setStartError] = useState(null)
@@ -97,6 +146,76 @@ export default function CurrentSession() {
     } finally {
       setStarting(false)
     }
+  }
+
+  /** Save the typed set: up to two requests, then straight into `session`.
+   *
+   * The `PerformedExercise` is created here and nowhere earlier, because until
+   * now there was nothing to put in it (A10). An exercise already trained in
+   * this session is reused rather than started again (A6), so a workout that
+   * wanders back to a movement keeps one block for it.
+   *
+   * Both lists redraw off `setSession` alone — there is one copy of the log on
+   * this page, so nothing is wired between them and `current/` is not re-read.
+   */
+  async function logSet(submitEvent) {
+    submitEvent.preventDefault()
+    if (entry === null || logging) return
+
+    setLogging(true)
+    setLogError(null)
+    try {
+      let performed = heldPerformed
+      if (performed === null) {
+        const created = await api.post('performed-exercises/', {
+          training_session: session.id,
+          exercise_definition: heldId,
+        })
+        // That serializer answers without `performed_sets`, and both lists read
+        // it, so the empty array it stands for is filled in here.
+        performed = { ...created, performed_sets: [] }
+        setSession((current) => ({
+          ...current,
+          performed_exercises: [...current.performed_exercises, performed],
+        }))
+      }
+
+      const set = await api.post('performed-sets/', {
+        performed_exercise: performed.id,
+        ...entry,
+      })
+      setSession((current) => ({
+        ...current,
+        performed_exercises: current.performed_exercises.map((candidate) =>
+          candidate.id === performed.id
+            ? { ...candidate, performed_sets: [...candidate.performed_sets, set] }
+            : candidate,
+        ),
+      }))
+      // Weight and reps stay as they are: another set of the same thing is the
+      // common case, and it should cost one tap.
+    } catch (failure) {
+      console.error(failure)
+      setLogError('Could not log that set. Please try again.')
+    } finally {
+      setLogging(false)
+    }
+  }
+
+  /** Let go of the exercise, and of what was being typed into it.
+   *
+   * Both ways out of a hold end here — backing out of a mis-tap and finishing a
+   * movement — because they are the same act on the client and neither is a
+   * request: every set was saved as it was logged (A7), so there is nothing
+   * left to write when the user is done with the exercise (A10). Nothing
+   * records that a movement was finished, so holding it again later simply
+   * continues it (A6).
+   */
+  function releaseExercise() {
+    setHeldId(null)
+    setWeight('')
+    setReps('')
+    setLogError(null)
   }
 
   return (
@@ -137,15 +256,77 @@ export default function CurrentSession() {
               <div className="held-exercise">
                 {/* React escapes it for us: catalogue names are user data. */}
                 <p className="held-name">Recording {held.name}</p>
-                {/* The way out of a mis-tap, not a control to reach for
-                    mid-set (A8). */}
-                <button
-                  className="change-exercise"
-                  type="button"
-                  onClick={() => setHeldId(null)}
-                >
-                  Change exercise
-                </button>
+
+                {/* Where the user is working, so the answer to "how many have I
+                    done, and at what?" is here rather than in the section
+                    below. */}
+                <SetList sets={heldSets} />
+
+                <form className="log-set" onSubmit={logSet}>
+                  <p>
+                    <label htmlFor="set-weight">Weight (kg)</label>
+                    <input
+                      id="set-weight"
+                      type="number"
+                      // The decimal keypad on a phone: plates come in halves.
+                      inputMode="decimal"
+                      step="any"
+                      min="0"
+                      // Blank is a bodyweight set, so this one is never required.
+                      placeholder="—"
+                      value={weight}
+                      onChange={(event) => setWeight(event.target.value)}
+                    />
+                  </p>
+                  <p>
+                    <label htmlFor="set-reps">Reps</label>
+                    <input
+                      id="set-reps"
+                      type="number"
+                      inputMode="numeric"
+                      step="1"
+                      min="1"
+                      value={reps}
+                      onChange={(event) => setReps(event.target.value)}
+                    />
+                  </p>
+                  {/* One tap per set and one tap per movement: the two sizes of
+                      thing this section does. Log set is off until the entry is
+                      a set, and off again while it is being saved, so a second
+                      tap cannot log a second set (A9). */}
+                  <div className="log-set-actions">
+                    <button className="button" type="submit" disabled={entry === null || logging}>
+                      {logging ? 'Logging…' : 'Log set'}
+                    </button>
+                    {/* Saves nothing: there is nothing left to save. Do not go
+                        looking for the request. */}
+                    <button
+                      className="log-exercise"
+                      type="button"
+                      onClick={releaseExercise}
+                      disabled={!heldSets.length || logging}
+                    >
+                      Log exercise
+                    </button>
+                  </div>
+                  {/* Beside the buttons, where the tap that failed was: nothing
+                      typed is touched, so the same values are there to retry. */}
+                  {logError && (
+                    <p className="status" data-state="error">
+                      {logError}
+                    </p>
+                  )}
+                </form>
+
+                {/* Only while there is nothing to finish. Once a set exists,
+                    Log exercise is the way out, and two controls doing one thing
+                    is one too many. The way out of a mis-tap, not a control to
+                    reach for mid-set (A8). */}
+                {heldSets.length === 0 && (
+                  <button className="change-exercise" type="button" onClick={releaseExercise}>
+                    Change exercise
+                  </button>
+                )}
               </div>
             ) : (
               <>
