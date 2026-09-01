@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth.jsx'
 import Nav from './components/Nav.jsx'
 import RequireAuth from './components/RequireAuth.jsx'
+import CurrentSession from './pages/CurrentSession.jsx'
 import ExerciseCatalogue from './pages/ExerciseCatalogue.jsx'
 import ExerciseDetail from './pages/ExerciseDetail.jsx'
 import Home from './pages/Home.jsx'
@@ -26,6 +27,10 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={<Private><Home /></Private>} />
+          <Route
+            path="/current-session"
+            element={<Private><CurrentSession /></Private>}
+          />
           <Route
             path="/exercises-catelog"
             element={<Private><ExerciseCatalogue /></Private>}
