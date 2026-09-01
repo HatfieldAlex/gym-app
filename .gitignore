@@ -1,23 +1,80 @@
+# ---------------------------------------------------------------------------
+# Python / Django (backend/)
+# ---------------------------------------------------------------------------
+
 # Byte-compiled / optimized
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual environment
+# Virtual environments
 .venv/
 venv/
 
-# Django
+# Django runtime artifacts
 db.sqlite3
 db.sqlite3-journal
-*.log
 local_settings.py
+
+# Collected static files & user uploads
+backend/staticfiles/
+backend/media/
+
+# Packaging / test tooling
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------------------------------------------------------------------------
+# JavaScript / frontend
+# ---------------------------------------------------------------------------
+
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+out/
+
+# Expo (fe-expo branch)
+.expo/
+.expo-shared/
+
+# Package manager noise
+.npm/
+.pnpm-store/
+.yarn/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Tooling caches
+.eslintcache
+.turbo/
+
+# ---------------------------------------------------------------------------
+# Shared
+# ---------------------------------------------------------------------------
 
 # Environment / secrets
 .env
 .env.*
+!.env.example
+
+# Logs
+*.log
 
 # Editors / OS
 .idea/
 .vscode/
 .DS_Store
+Thumbs.db
+*.swp
