@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}{{ exercise.name }} — Gym App{% endblock %}
+
+{% block content %}
+<style>
+    .meta { margin-top: .5rem; }
+    .back { display: inline-block; margin-top: 1.5rem; }
+</style>
+
+<h1>{{ exercise.name }}</h1>
+<p class="meta">Added {{ exercise.created_at|date:"j M Y" }}.</p>
+<p class="meta"><code>{{ exercise.id }}</code></p>
+
+<a class="back" href="{% url 'exercises_catelog' %}">← Back to the catalogue</a>
+{% endblock %}

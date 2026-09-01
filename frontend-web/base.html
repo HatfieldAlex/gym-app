@@ -20,10 +20,25 @@
             display: flex;
             gap: 1rem;
             justify-content: center;
+            align-items: center;
             padding: 1rem;
             border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
         }
         code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .button {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: .5rem 1.25rem;
+            border: 1px solid currentColor;
+            border-radius: .375rem;
+            font: inherit;
+            color: inherit;
+            background: none;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        nav .button { margin-top: 0; padding: .25rem .75rem; }
+        nav form { display: contents; }
     </style>
 </head>
 <body>
@@ -32,13 +47,21 @@
         <a href="{% url 'home' %}">Home</a>
         <a href="{% url 'exercises_catelog' %}">Exercise catalogue</a>
         <a href="{% url 'training_sessions' %}">Training sessions</a>
+        <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button class="button" type="submit">Log out</button>
+        </form>
     </nav>
     <main>
         {% block content %}{% endblock %}
     </main>
     {% else %}
     <main>
+        {# Overridable so the login page itself can render for anonymous visitors. #}
+        {% block anon_content %}
         <p>You are not signed in.</p>
+        <a class="button" href="{% url 'login' %}">Log in</a>
+        {% endblock %}
     </main>
     {% endif %}
 </body>

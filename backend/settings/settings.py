@@ -132,3 +132,12 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+
+# Authentication
+# https://docs.djangoproject.com/en/6.1/topics/auth/default/#module-django.contrib.auth.views
+
+# Defaults are /accounts/profile/ and the login page respectively; neither is
+# wanted here, so both ends of a session land back on the home page.
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/'

@@ -3,6 +3,34 @@
 {% block title %}Training sessions — Gym App{% endblock %}
 
 {% block content %}
+<style>
+    /* Scoped to this page: base.html centres <main>, but lists read better left-aligned. */
+    .sessions { list-style: none; margin: 1.5rem 0 0; padding: 0; text-align: left; display: inline-block; }
+    .session + .session { margin-top: 1.5rem; }
+    .session h2 { margin: 0; font-size: 1.1rem; }
+    .session time { opacity: .7; font-size: .9rem; }
+    .exercises { margin: .25rem 0 0; padding-left: 1.25rem; }
+</style>
 <h1>Training sessions</h1>
-<p>Placeholder page. Will list the signed-in user's <code>observations.TrainingSession</code> rows.</p>
+{% if sessions %}
+<ul class="sessions">
+    {% for session in sessions %}
+    <li class="session">
+        <h2>{{ session.type }}</h2>
+        <time datetime="{{ session.created_at|date:'c' }}">{{ session.created_at|date:"j M Y, H:i" }}</time>
+        {% if session.performed_exercises.all %}
+        <ol class="exercises">
+            {% for performed in session.performed_exercises.all %}
+            <li>{{ performed.exercise_definition.name }}</li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <p>No exercises recorded in this session.</p>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>No sessions logged yet.</p>
+{% endif %}
 {% endblock %}

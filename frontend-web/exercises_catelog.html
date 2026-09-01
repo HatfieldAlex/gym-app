@@ -3,6 +3,31 @@
 {% block title %}Exercise catalogue — Gym App{% endblock %}
 
 {% block content %}
+<style>
+    table { margin: 1.5rem auto 0; border-collapse: collapse; text-align: left; }
+    th, td { padding: .4rem .9rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+    th { font-weight: 600; }
+</style>
+
 <h1>Exercise catalogue</h1>
-<p>Placeholder page. Will list <code>catalog.ExerciseDefinition</code> rows.</p>
+
+{% if exercises %}
+<p>{{ exercises|length }} exercise{{ exercises|length|pluralize }} in the catalogue.</p>
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for exercise in exercises %}
+        <tr>
+            <td><a href="{% url 'exercise_detail' exercise.id %}">{{ exercise.name }}</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No exercises yet.</p>
+{% endif %}
 {% endblock %}
