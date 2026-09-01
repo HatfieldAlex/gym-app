@@ -5,28 +5,32 @@ import { useDocumentTitle, useLoad } from '../hooks.js'
 function Session({ session }) {
   return (
     <li className="session">
-      <h2>{session.type}</h2>
-      <time dateTime={session.created_at}>
-        {new Date(session.created_at).toLocaleString(undefined, {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        })}
-      </time>
+      {/* A native disclosure: the list shows dates only, and opening one reveals
+          its exercises. <details> gets the click, keyboard and screen-reader
+          behaviour right without any state of our own. */}
+      <details>
+        <summary>
+          <time dateTime={session.created_at}>
+            {new Date(session.created_at).toLocaleDateString(undefined, {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })}
+          </time>
+        </summary>
 
-      {/* The session serialiser nests its exercises in performed order, so a
-          list of sessions is one request rather than one per session. */}
-      {session.performed_exercises.length === 0 ? (
-        <p>No exercises recorded in this session.</p>
-      ) : (
-        <ol className="exercises">
-          {session.performed_exercises.map((performed) => (
-            <li key={performed.id}>{performed.exercise_name}</li>
-          ))}
-        </ol>
-      )}
+        {/* The session serialiser nests its exercises in performed order, so a
+            list of sessions is one request rather than one per session. */}
+        {session.performed_exercises.length === 0 ? (
+          <p>No exercises recorded in this session.</p>
+        ) : (
+          <ol className="exercises">
+            {session.performed_exercises.map((performed) => (
+              <li key={performed.id}>{performed.exercise_name}</li>
+            ))}
+          </ol>
+        )}
+      </details>
     </li>
   )
 }
