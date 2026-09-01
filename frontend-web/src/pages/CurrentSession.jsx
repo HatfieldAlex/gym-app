@@ -64,12 +64,23 @@ export default function CurrentSession() {
   // answer to the question, not a failure to answer it.
   const { state, data, error } = useLoad(() => api.get('training-sessions/current/'))
 
+  // Read-only reference data, already ordered by name: fetched once and used as
+  // it arrives.
+  const { state: catalogueState, data: exercises } = useLoad(() => api.list('exercises/'))
+
   // The loaded session becomes the page's own state: what gets logged into it
   // from here on is known to this page before it is re-read from the API.
   const [session, setSession] = useState(null)
   useEffect(() => {
     if (state === 'ready') setSession(data)
   }, [state, data])
+
+  // The exercise being recorded into, by catalogue id — a UUID string, so it is
+  // kept exactly as it arrived. Holding one is a client-side act (A10): nothing
+  // is written until its first set (03.5), so a refresh comes back to the
+  // dropdown with everything already logged still logged.
+  const [heldId, setHeldId] = useState(null)
+  const held = exercises?.find((exercise) => exercise.id === heldId) ?? null
 
   const [starting, setStarting] = useState(false)
   // <Status> speaks for the initial load, so a failed start needs its own line.
@@ -121,7 +132,45 @@ export default function CurrentSession() {
 
           <section className="record-set">
             <h2>Record new exercise</h2>
-            <p>Logging a set is not built yet.</p>
+
+            {held ? (
+              <div className="held-exercise">
+                {/* React escapes it for us: catalogue names are user data. */}
+                <p className="held-name">Recording {held.name}</p>
+                {/* The way out of a mis-tap, not a control to reach for
+                    mid-set (A8). */}
+                <button
+                  className="change-exercise"
+                  type="button"
+                  onClick={() => setHeldId(null)}
+                >
+                  Change exercise
+                </button>
+              </div>
+            ) : (
+              <>
+                <select
+                  aria-label="Exercise"
+                  value=""
+                  disabled={catalogueState !== 'ready'}
+                  onChange={(event) => setHeldId(event.target.value)}
+                >
+                  <option value="">Choose an exercise</option>
+                  {exercises?.map((exercise) => (
+                    <option key={exercise.id} value={exercise.id}>
+                      {exercise.name}
+                    </option>
+                  ))}
+                </select>
+                {/* <Status> above speaks for the session, so a catalogue that
+                    will not load says so here rather than looking like one. */}
+                {catalogueState === 'error' && (
+                  <p className="status" data-state="error">
+                    Could not load the exercise list. Please try again.
+                  </p>
+                )}
+              </>
+            )}
           </section>
 
           {/* Read straight off `session`, the one copy of the workout this page
