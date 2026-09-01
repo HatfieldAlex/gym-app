@@ -50,6 +50,27 @@ class TrainingSessionAPITests(APITestCase):
             ['Squat'],
         )
 
+    def test_detail_nests_the_sets_of_each_exercise(self):
+        PerformedSet.objects.create(performed_exercise=self.performed, weight_kg=60, reps=8)
+        PerformedSet.objects.create(performed_exercise=self.performed, weight_kg=70, reps=5)
+
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse('api:trainingsession-detail', args=[self.session.pk])
+        )
+        sets = response.data['performed_exercises'][0]['performed_sets']
+        self.assertEqual([s['reps'] for s in sets], [8, 5])
+
+    def test_list_leaves_the_sets_out(self):
+        """The list view carries names only; sets are the detail view's job."""
+        PerformedSet.objects.create(performed_exercise=self.performed, weight_kg=60, reps=8)
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('api:trainingsession-list'))
+        self.assertNotIn(
+            'performed_sets', response.data['results'][0]['performed_exercises'][0]
+        )
+
     def test_create_stamps_the_requester_as_owner(self):
         self.client.force_login(self.user)
         response = self.client.post(

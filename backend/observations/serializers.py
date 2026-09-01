@@ -59,6 +59,19 @@ class PerformedExerciseSerializer(OwnedRelationMixin, serializers.ModelSerialize
         read_only_fields = ['id', 'created_at']
 
 
+class PerformedExerciseDetailSerializer(PerformedExerciseSerializer):
+    """The same movement with every set it was worked through, in performed order.
+
+    Kept apart from the plain serializer so listing sessions does not carry every
+    set of every session; only the single-session view pays for them.
+    """
+
+    performed_sets = PerformedSetSerializer(many=True, read_only=True)
+
+    class Meta(PerformedExerciseSerializer.Meta):
+        fields = PerformedExerciseSerializer.Meta.fields + ['performed_sets']
+
+
 class TrainingSessionSerializer(serializers.ModelSerializer):
     """A session with its exercises nested in performed order.
 
@@ -73,3 +86,9 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
         model = TrainingSession
         fields = ['id', 'type', 'created_at', 'performed_exercises']
         read_only_fields = ['id', 'created_at']
+
+
+class TrainingSessionDetailSerializer(TrainingSessionSerializer):
+    """One session, all the way down: its exercises and each of their sets."""
+
+    performed_exercises = PerformedExerciseDetailSerializer(many=True, read_only=True)

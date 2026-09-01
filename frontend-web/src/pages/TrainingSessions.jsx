@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 import { api } from '../api.js'
 import Status from '../components/Status.jsx'
 import { useDocumentTitle, useLoad } from '../hooks.js'
@@ -10,13 +12,19 @@ function Session({ session }) {
           behaviour right without any state of our own. */}
       <details>
         <summary>
-          <time dateTime={session.created_at}>
-            {new Date(session.created_at).toLocaleDateString(undefined, {
-              day: 'numeric',
-              month: 'short',
-              year: 'numeric',
-            })}
-          </time>
+          {/* The date links onwards to the session's own page. Link calls
+              preventDefault before navigating, which also cancels the summary's
+              toggle, so the two clicks stay distinct: the date navigates, the
+              rest of the row opens the dropdown. */}
+          <Link to={`/training-sessions/${session.id}`}>
+            <time dateTime={session.created_at}>
+              {new Date(session.created_at).toLocaleDateString(undefined, {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </time>
+          </Link>
         </summary>
 
         {/* The session serialiser nests its exercises in performed order, so a

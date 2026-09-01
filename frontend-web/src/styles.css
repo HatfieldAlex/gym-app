@@ -62,10 +62,22 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
    left-aligned. */
 .sessions { list-style: none; margin: 1.5rem 0 0; padding: 0; text-align: left; display: inline-block; }
 .session + .session { margin-top: .5rem; }
-.session summary { cursor: pointer; padding: .25rem 0; }
-.session summary time { font-weight: 600; }
+/* The marker and the padding to its right toggle the dropdown; the dated link
+   inside navigates instead, so the summary keeps room for both targets. */
+.session summary { cursor: pointer; padding: .25rem 3rem .25rem 0; }
+.session summary a { font-weight: 600; }
 .exercises { margin: .25rem 0 .5rem; padding-left: 1.25rem; }
 .session details p { margin: .25rem 0 .5rem; }
+
+/* Training session detail: one block per exercise, each with its own set table. */
+.performed-exercises { list-style: none; margin: 1.5rem 0 0; padding: 0; text-align: left; display: inline-block; }
+.performed + .performed { margin-top: 1.75rem; }
+.performed h2 { margin: 0 0 .5rem; font-size: 1.1rem; }
+.sets { border-collapse: collapse; text-align: left; }
+.sets th,
+.sets td { padding: .3rem .9rem .3rem 0; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+.sets thead th { font-weight: 600; font-size: .85rem; opacity: .7; }
+.sets tbody th { font-weight: 400; opacity: .7; }
 
 /* Login */
 .login { margin-top: 1.5rem; display: inline-block; text-align: left; }

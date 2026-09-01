@@ -5,6 +5,7 @@ from .models import PerformedExercise, PerformedSet, TrainingSession
 from .serializers import (
     PerformedExerciseSerializer,
     PerformedSetSerializer,
+    TrainingSessionDetailSerializer,
     TrainingSessionSerializer,
 )
 
@@ -14,8 +15,29 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
 
     serializer_class = TrainingSessionSerializer
 
+    def get_serializer_class(self):
+        """Reading one session returns its sets too; listing them does not."""
+        if self.action == 'retrieve':
+            return TrainingSessionDetailSerializer
+        return super().get_serializer_class()
+
     def get_queryset(self):
         """Scoped to the requester: ownership is never a client-supplied filter."""
+        # created_at is the order within the session, and within a performed exercise.
+        performed_exercises = (
+            PerformedExercise.objects
+            .select_related('exercise_definition')
+            .order_by('created_at')
+        )
+        # Only the detail view serialises sets, so only it pays to fetch them.
+        if self.action == 'retrieve':
+            performed_exercises = performed_exercises.prefetch_related(
+                Prefetch(
+                    'performed_sets',
+                    queryset=PerformedSet.objects.order_by('created_at'),
+                ),
+            )
+
         return (
             TrainingSession.objects
             .filter(user=self.request.user)
@@ -23,13 +45,7 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
             .prefetch_related(
                 # One extra query for every session's exercises rather than one per
                 # session, and select_related folds in the catalogue name too.
-                # created_at is the order within the session.
-                Prefetch(
-                    'performed_exercises',
-                    queryset=PerformedExercise.objects
-                    .select_related('exercise_definition')
-                    .order_by('created_at'),
-                ),
+                Prefetch('performed_exercises', queryset=performed_exercises),
             )
         )
 

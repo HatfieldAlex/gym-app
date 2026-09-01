@@ -9,6 +9,7 @@ import Home from './pages/Home.jsx'
 import Login from './pages/Login.jsx'
 import NotFound from './pages/NotFound.jsx'
 import Settings from './pages/Settings.jsx'
+import TrainingSessionDetail from './pages/TrainingSessionDetail.jsx'
 import TrainingSessions from './pages/TrainingSessions.jsx'
 
 /** Everything but the login page needs a session; wrap it once, here. */
@@ -36,6 +37,10 @@ export default function App() {
           <Route
             path="/training-sessions"
             element={<Private><TrainingSessions /></Private>}
+          />
+          <Route
+            path="/training-sessions/:sessionId"
+            element={<Private><TrainingSessionDetail /></Private>}
           />
           <Route path="/settings" element={<Private><Settings /></Private>} />
           <Route path="/login" element={<Login />} />
