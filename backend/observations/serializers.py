@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import PerformedExercise, PerformedSet, TrainingSession
@@ -84,8 +85,39 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TrainingSession
-        fields = ['id', 'type', 'created_at', 'performed_exercises']
+        fields = [
+            'id',
+            'type',
+            'created_at',
+            'started_at',
+            'ended_at',
+            'performed_exercises',
+        ]
+        # `ended_at` is not listed here: it is writable on create, so that a
+        # workout typed up after the fact can arrive already closed, and
+        # read-only afterwards -- see get_fields.
         read_only_fields = ['id', 'created_at']
+
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.instance is not None:
+            # Closing a live session goes through the end/ action, the only path
+            # that stamps a timestamp the client did not choose.
+            fields['ended_at'].read_only = True
+        return fields
+
+    def validate(self, attrs):
+        """Answer 400 rather than letting the database's check constraint 500."""
+        started_at = attrs.get('started_at', getattr(self.instance, 'started_at', None))
+        if started_at is None:
+            # Omitted on create: the model stamps timezone.now() on save.
+            started_at = timezone.now()
+        ended_at = attrs.get('ended_at', getattr(self.instance, 'ended_at', None))
+        if ended_at is not None and ended_at < started_at:
+            raise serializers.ValidationError(
+                {'ended_at': 'A session cannot end before it started.'}
+            )
+        return attrs
 
 
 class TrainingSessionDetailSerializer(TrainingSessionSerializer):

@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -16,12 +19,18 @@ class TrainingSessionAPITests(APITestCase):
         cls.other = User.objects.create_user('stranger', password='pw')
 
         cls.squat = ExerciseDefinition.objects.create(name='Squat')
-        cls.session = TrainingSession.objects.create(user=cls.user, type='legs')
+        # Finished sessions: an open one would block every create below.
+        trained_at = timezone.now()
+        cls.session = TrainingSession.objects.create(
+            user=cls.user, type='legs', started_at=trained_at, ended_at=trained_at
+        )
         cls.performed = PerformedExercise.objects.create(
             training_session=cls.session,
             exercise_definition=cls.squat,
         )
-        cls.other_session = TrainingSession.objects.create(user=cls.other, type='push')
+        cls.other_session = TrainingSession.objects.create(
+            user=cls.other, type='push', started_at=trained_at, ended_at=trained_at
+        )
 
     def test_anonymous_request_is_rejected(self):
         response = self.client.get(reverse('api:trainingsession-list'))
@@ -88,6 +97,126 @@ class TrainingSessionAPITests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(TrainingSession.objects.get(pk=response.data['id']).user, self.user)
+
+
+class TrainingSessionLifecycleTests(APITestCase):
+    """Starting, finding and ending the one session that is in progress."""
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.user = User.objects.create_user('lifter', password='pw')
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+    def start(self, **body):
+        return self.client.post(
+            reverse('api:trainingsession-list'), body, format='json'
+        )
+
+    def test_current_is_204_when_no_session_is_open(self):
+        """Not being mid-workout is a normal state, not a missing resource."""
+        response = self.client.get(reverse('api:trainingsession-current'))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.content, b'')
+
+    def test_an_empty_post_starts_a_session(self):
+        before = timezone.now()
+        response = self.start()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(response.data['ended_at'])
+
+        session = TrainingSession.objects.get(pk=response.data['id'])
+        self.assertGreaterEqual(session.started_at, before)
+        self.assertLessEqual(session.started_at, timezone.now())
+
+    def test_only_one_session_may_be_open_at_a_time(self):
+        first = self.start()
+        response = self.start()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # The client can recover by loading the session it had lost track of.
+        self.assertEqual(response.data['open_session'], first.data['id'])
+        self.assertEqual(TrainingSession.objects.count(), 1)
+
+    def test_current_returns_the_open_session_with_its_exercises(self):
+        created = self.start()
+        response = self.client.get(reverse('api:trainingsession-current'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['id'], created.data['id'])
+        self.assertEqual(response.data['performed_exercises'], [])
+
+    def test_ending_a_session_closes_it_once(self):
+        session_id = self.start().data['id']
+        end_url = reverse('api:trainingsession-end', args=[session_id])
+
+        response = self.client.post(end_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data['ended_at'])
+
+        # A second call must not move the timestamp.
+        ended_at = TrainingSession.objects.get(pk=session_id).ended_at
+        response = self.client.post(end_url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(TrainingSession.objects.get(pk=session_id).ended_at, ended_at)
+
+        response = self.client.get(reverse('api:trainingsession-current'))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_ending_a_session_that_has_not_started_is_400_not_500(self):
+        """The check constraint would reject the save; say so rather than crash."""
+        session = TrainingSession.objects.create(
+            user=self.user, started_at=timezone.now() + timedelta(days=1)
+        )
+        response = self.client.post(reverse('api:trainingsession-end', args=[session.pk]))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNone(TrainingSession.objects.get(pk=session.pk).ended_at)
+
+    def test_a_session_typed_in_after_the_fact_is_not_open(self):
+        """It is already finished, so a running session does not block it, and it
+        lists by when it was trained rather than when it was typed."""
+        last_week = timezone.now() - timedelta(days=7)
+        older = TrainingSession.objects.create(
+            user=self.user,
+            started_at=last_week - timedelta(days=1),
+            ended_at=last_week - timedelta(days=1) + timedelta(hours=1),
+        )
+        open_session = self.start()
+
+        response = self.start(
+            started_at=last_week.isoformat(),
+            ended_at=(last_week + timedelta(hours=1)).isoformat(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        current = self.client.get(reverse('api:trainingsession-current'))
+        self.assertEqual(current.data['id'], open_session.data['id'])
+
+        listed = self.client.get(reverse('api:trainingsession-list'))
+        self.assertEqual(
+            [s['id'] for s in listed.data['results']],
+            [open_session.data['id'], response.data['id'], str(older.pk)],
+        )
+
+    def test_a_session_cannot_end_before_it_started(self):
+        started_at = timezone.now() - timedelta(days=7)
+        response = self.start(
+            started_at=started_at.isoformat(),
+            ended_at=(started_at - timedelta(hours=1)).isoformat(),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('ended_at', response.data)
+
+    def test_patch_cannot_close_a_session(self):
+        """Only end/ stamps a timestamp the client did not choose."""
+        session_id = self.start().data['id']
+        response = self.client.patch(
+            reverse('api:trainingsession-detail', args=[session_id]),
+            {'ended_at': timezone.now().isoformat()},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(TrainingSession.objects.get(pk=session_id).ended_at)
 
 
 class PerformedExerciseAPITests(APITestCase):

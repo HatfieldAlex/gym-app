@@ -83,15 +83,17 @@ Table observations_performedset {
 Table observations_trainingsession {
   id         uuid        [pk, note: 'default set in Python: uuid.uuid4()']
   user_id    integer     [not null, ref: > auth_user.id, note: 'on_delete=CASCADE']
-  type       varchar(8)  [not null]
+  type       varchar(8)  [not null, default: 'mixed']
   created_at timestamptz [not null, note: 'set to now() on insert (auto_now_add)']
+  started_at timestamptz [not null, note: 'default set in Python: django.utils.timezone.now(); when the training actually happened; created_at is when the row was written']
+  ended_at   timestamptz [null, note: 'null while the session is in progress']
 
   indexes {
     user_id [note: 'implicit: Django indexes every ForeignKey column']
-    (user_id, created_at) [name: 'trainsess_user_created_idx']
+    (user_id, started_at) [name: 'trainsess_user_started_idx']
   }
 
-  Note: 'One user has many training sessions.'
+  Note: 'One user has many training sessions. CHECK trainsess_ended_after_started: (ended_at IS NULL OR ended_at >= started_at)'
 }
 
 // ==========================================================================

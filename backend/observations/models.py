@@ -2,6 +2,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class TrainingSession(models.Model):
@@ -13,14 +14,41 @@ class TrainingSession(models.Model):
         on_delete=models.CASCADE,
         related_name='training_sessions',
     )
-    type = models.CharField(max_length=8)
+    # Defaulted so a session can be started from a bare POST: beginning a workout
+    # says nothing yet about what kind it will turn out to be.
+    type = models.CharField(max_length=8, default='mixed')
     created_at = models.DateTimeField(auto_now_add=True)
+    # The two timestamps below differ for a session typed up after the fact.
+    started_at = models.DateTimeField(
+        default=timezone.now,
+        help_text=(
+            'when the training actually happened; '
+            'created_at is when the row was written'
+        ),
+    )
+    ended_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='null while the session is in progress',
+    )
 
     class Meta:
         verbose_name = 'training session'
         verbose_name_plural = 'training sessions'
         indexes = [
-            models.Index(fields=['user', 'created_at'], name='trainsess_user_created_idx'),
+            # History is ordered by when the training happened, not when it was typed.
+            models.Index(fields=['user', 'started_at'], name='trainsess_user_started_idx'),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                # An open session (null ended_at) passes; a closed one may not end
+                # before it began.
+                condition=(
+                    models.Q(ended_at__isnull=True)
+                    | models.Q(ended_at__gte=models.F('started_at'))
+                ),
+                name='trainsess_ended_after_started',
+            ),
         ]
 
 

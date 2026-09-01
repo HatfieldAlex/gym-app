@@ -140,6 +140,49 @@ def ref_suffix(field):
     return 'ref: %s %s.%s' % (op, remote.db_table, target.column)
 
 
+LOOKUP_OPERATORS = {'exact': '=', 'gt': '>', 'gte': '>=', 'lt': '<', 'lte': '<='}
+
+
+def check_condition(constraint):
+    """A CheckConstraint's condition, or None for constraints that are not checks.
+
+    `condition` is the modern spelling; `check` was its name before Django 5.1,
+    and on 6.x that attribute is the unrelated system-check method, hence the
+    callable guard.
+    """
+    condition = getattr(constraint, 'condition', None)
+    if condition is not None:
+        return condition
+    legacy = getattr(constraint, 'check', None)
+    return None if callable(legacy) else legacy
+
+
+def render_condition(node):
+    """A Q/F tree as infix SQL-ish text: `repr` of a Q is unreadable in a diagram."""
+    from django.db.models import F, Q
+
+    if isinstance(node, Q):
+        rendered = (' %s ' % node.connector).join(
+            render_condition(child) for child in node.children
+        )
+        if node.negated:
+            return 'NOT (%s)' % rendered
+        return '(%s)' % rendered if len(node.children) > 1 else rendered
+    if isinstance(node, tuple):
+        lookup, value = node
+        field, sep, op = lookup.rpartition('__')
+        if not sep:
+            field, op = lookup, 'exact'
+        if op == 'isnull':
+            return '%s IS %sNULL' % (field, '' if value else 'NOT ')
+        return '%s %s %s' % (field, LOOKUP_OPERATORS.get(op, op), render_condition(value))
+    if isinstance(node, F):
+        return node.name
+    if node is None:
+        return 'NULL'
+    return str(node)
+
+
 def table_note(model):
     doc = (model.__doc__ or '').strip()
     # Django synthesises "Model(field, field, ...)" when there is no docstring.
@@ -202,12 +245,17 @@ def render_table(model):
     for unique_set in meta.unique_together:
         cols = [meta.get_field(f).column for f in unique_set]
         index_lines.append(_index_line(cols, ['unique']))
+    check_notes = []
     for constraint in meta.constraints:
         fields = getattr(constraint, 'fields', None)
         if not fields:
-            expr = getattr(constraint, 'check', None) or getattr(constraint, 'condition', None)
-            if expr is not None:
-                lines.append("  Note: 'CHECK constraint %s: %s'" % (constraint.name, esc(expr)))
+            # DBML cannot express a CHECK, and a table may carry only one Note,
+            # so checks are folded into the table's note below.
+            condition = check_condition(constraint)
+            if condition is not None:
+                check_notes.append(
+                    'CHECK %s: %s' % (constraint.name, render_condition(condition))
+                )
             continue
         cols = [meta.get_field(f).column for f in fields]
         index_lines.append(_index_line(cols, ['unique', "name: '%s'" % constraint.name]))
@@ -218,7 +266,7 @@ def render_table(model):
         lines.extend('    ' + line for line in index_lines)
         lines.append('  }')
 
-    note = table_note(model)
+    note = ' '.join(filter(None, [table_note(model)] + check_notes))
     if note:
         lines.append('')
         lines.append("  Note: '%s'" % esc(note))
