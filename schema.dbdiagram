@@ -20,12 +20,6 @@
         "y": -136
       },
       {
-        "name": "exercise",
-        "schemaName": "public",
-        "x": 394.77490234375,
-        "y": 314.3640402349645
-      },
-      {
         "name": "performed_exercise",
         "schemaName": "public",
         "x": 855.227446138842,
@@ -42,6 +36,18 @@
         "schemaName": "public",
         "x": 1660.877156671066,
         "y": 19.38199681124621
+      },
+      {
+        "name": "performed_exercise_prescription",
+        "schemaName": "public",
+        "x": 324.28197357699446,
+        "y": 343.52864233928454
+      },
+      {
+        "name": "exercise_definition",
+        "schemaName": "public",
+        "x": -18.537680774804045,
+        "y": 151.60437679664818
       }
     ],
     "tableGroupCollapseStates": [],
@@ -388,6 +394,36 @@
           "performed_set_id"
         ],
         "secondTableName": "performed_rep",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "id"
+        ],
+        "firstTableName": "performed_exercise_prescription",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "prescription_id"
+        ],
+        "secondTableName": "performed_exercise",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "id"
+        ],
+        "firstTableName": "exercise_definition",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "exercise_definition_id"
+        ],
+        "secondTableName": "performed_exercise",
         "secondSchemaName": "public",
         "secondRelation": "*",
         "checkPoints": []

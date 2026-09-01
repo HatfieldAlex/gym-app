@@ -24,26 +24,29 @@ Table training_session {
 }
 
 // The exercise catalogue: one row per movement, referenced by performed_exercise.
-Table exercise {
-  id             uuid [pk, default: `gen_random_uuid()`]
-  name           varchar(120) [not null, unique]
-  modality       modality     [not null]
-  primary_muscle muscle_group [not null]
-  created_at     timestamptz  [not null, default: `now()`]
+Table exercise_definition {
+  id         uuid [pk, default: `gen_random_uuid()`]
+  name       varchar(120) [not null, unique]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+// One prescription, referenced by many performed_exercise rows.
+Table performed_exercise_prescription {
+  id uuid [pk, default: `gen_random_uuid()`]
 }
 
 // One movement as actually performed in one session.
-// Many per training_session; many can reference the same exercise.
+// Many per training_session; many can reference the same exercise_definition.
 Table performed_exercise {
-  id                  uuid [pk, default: `gen_random_uuid()`]
-  training_session_id uuid [not null, ref: > training_session.id]
-  exercise_id         uuid [not null, ref: > exercise.id]
-  position            int  [not null, note: 'ordinal within the session']
-  created_at          timestamptz [not null, default: `now()`]
+  id                     uuid [pk, default: `gen_random_uuid()`]
+  training_session_id    uuid [not null, ref: > training_session.id]
+  exercise_definition_id uuid [not null, ref: > exercise_definition.id]
+  prescription_id        uuid [null, ref: > performed_exercise_prescription.id]
+  created_at             timestamptz [not null, default: `now()`, note: 'also the order within the session']
 
   indexes {
-    (training_session_id, position) [unique]
-    (exercise_id)
+    (training_session_id, created_at)
+    (exercise_definition_id)
   }
 }
 
@@ -51,16 +54,15 @@ Table performed_exercise {
 Table performed_set {
   id                    uuid [pk, default: `gen_random_uuid()`]
   performed_exercise_id uuid [not null, ref: > performed_exercise.id]
-  set_index             int  [not null, note: 'ordinal within the performed_exercise']
   weight_kg             decimal(6,2) [null, note: 'always stored metric; convert at display time']
   reps                  int [null]
   distance_m            decimal(9,2) [null, note: 'always stored metric; convert at display time']
   duration_s            int [null, note: 'for time-based work instead of reps']
   rpe                   decimal(3,1) [null]
-  is_warmup             boolean [not null, default: false]
+  created_at            timestamptz [not null, default: `now()`, note: 'also the order within the performed_exercise']
 
   indexes {
-    (performed_exercise_id, set_index) [unique]
+    (performed_exercise_id, created_at)
   }
 }
 
