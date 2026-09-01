@@ -21,4 +21,14 @@ from django.views.generic import TemplateView
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
+    path(
+        'exercises-catelog/',
+        TemplateView.as_view(template_name='exercises_catelog.html'),
+        name='exercises_catelog',
+    ),
+    path(
+        'training-sessions/',
+        TemplateView.as_view(template_name='training_sessions.html'),
+        name='training_sessions',
+    ),
 ]
