@@ -1,0 +1,15 @@
+{
+  "name": "training-log-directions",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "android": "expo run:android",
+    "start": "expo start"
+  },
+  "dependencies": {
+    "expo": "56.0.21",
+    "react": "19.2.3",
+    "react-native": "0.85.3"
+  }
+}

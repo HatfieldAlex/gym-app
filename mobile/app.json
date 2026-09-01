@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Training Log Directions",
+    "slug": "training-log-directions",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "android": {
+      "package": "dev.local.traininglogdirections"
+    }
+  }
+}
