@@ -48,6 +48,12 @@
         "schemaName": "public",
         "x": -18.537680774804045,
         "y": 151.60437679664818
+      },
+      {
+        "name": "exercise_prescription",
+        "schemaName": "public",
+        "x": -120,
+        "y": 388.9406159998009
       }
     ],
     "tableGroupCollapseStates": [],
@@ -422,6 +428,21 @@
         "firstRelation": "1",
         "secondFieldNames": [
           "exercise_definition_id"
+        ],
+        "secondTableName": "performed_exercise",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "id"
+        ],
+        "firstTableName": "exercise_prescription",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "exercise_prescription_id"
         ],
         "secondTableName": "performed_exercise",
         "secondSchemaName": "public",

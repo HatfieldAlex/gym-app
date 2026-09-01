@@ -31,18 +31,18 @@ Table exercise_definition {
 }
 
 // One prescription, referenced by many performed_exercise rows.
-Table performed_exercise_prescription {
+Table exercise_prescription {
   id uuid [pk, default: `gen_random_uuid()`]
 }
 
 // One movement as actually performed in one session.
 // Many per training_session; many can reference the same exercise_definition.
 Table performed_exercise {
-  id                     uuid [pk, default: `gen_random_uuid()`]
-  training_session_id    uuid [not null, ref: > training_session.id]
-  exercise_definition_id uuid [not null, ref: > exercise_definition.id]
-  prescription_id        uuid [null, ref: > performed_exercise_prescription.id]
-  created_at             timestamptz [not null, default: `now()`, note: 'also the order within the session']
+  id                       uuid [pk, default: `gen_random_uuid()`]
+  training_session_id      uuid [not null, ref: > training_session.id]
+  exercise_definition_id   uuid [not null, ref: > exercise_definition.id]
+  exercise_prescription_id uuid [null, ref: > exercise_prescription.id]
+  created_at               timestamptz [not null, default: `now()`, note: 'also the order within the session']
 
   indexes {
     (training_session_id, created_at)
