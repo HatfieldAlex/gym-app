@@ -14,8 +14,8 @@
 </form>
 {% endblock %}
 
-{# LoginView does not redirect authenticated visitors by default, so give them
-   something better than an empty page if they land here already signed in. #}
+{% comment %} LoginView does not redirect authenticated visitors by default, so give them
+   something better than an empty page if they land here already signed in. {% endcomment %}
 {% block content %}
 <p>You are already signed in as {{ user.get_username }}.</p>
 <a class="button" href="{% url 'home' %}">Go home</a>

@@ -11,23 +11,54 @@
 
 <h1>Exercise catalogue</h1>
 
-{% if exercises %}
-<p>{{ exercises|length }} exercise{{ exercises|length|pluralize }} in the catalogue.</p>
-<table>
+<p id="count" hidden></p>
+<p class="status" id="status" hidden></p>
+<table id="catalogue" hidden>
     <thead>
         <tr>
             <th>Name</th>
         </tr>
     </thead>
-    <tbody>
-        {% for exercise in exercises %}
-        <tr>
-            <td><a href="{% url 'exercise_detail' exercise.id %}">{{ exercise.name }}</a></td>
-        </tr>
-        {% endfor %}
-    </tbody>
+    <tbody></tbody>
 </table>
-{% else %}
-<p>No exercises yet.</p>
-{% endif %}
+
+{% comment %} The detail route takes a UUID, so the template can only resolve its stem: the
+   ids come from the API and the rest of the path is appended in the browser. {% endcomment %}
+<script data-detail-url="{% url 'exercises_catelog' %}">
+    (function () {
+        const detailUrl = document.currentScript.dataset.detailUrl;
+        const status = document.getElementById('status');
+        const count = document.getElementById('count');
+        const table = document.getElementById('catalogue');
+        const tbody = table.querySelector('tbody');
+
+        window.renderWithStatus(status, async () => {
+            const exercises = await window.gymApi.list('exercises/');
+
+            if (exercises.length === 0) {
+                count.textContent = 'No exercises yet.';
+                count.hidden = false;
+                return;
+            }
+
+            for (const exercise of exercises) {
+                const link = document.createElement('a');
+                link.href = `${detailUrl}${exercise.id}/`;
+                // textContent, not innerHTML: catalogue names are user data.
+                link.textContent = exercise.name;
+
+                const cell = document.createElement('td');
+                cell.append(link);
+                const row = document.createElement('tr');
+                row.append(cell);
+                tbody.append(row);
+            }
+
+            const plural = exercises.length === 1 ? '' : 's';
+            count.textContent = `${exercises.length} exercise${plural} in the catalogue.`;
+            count.hidden = false;
+            table.hidden = false;
+        });
+    })();
+</script>
 {% endblock %}

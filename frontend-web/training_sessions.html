@@ -11,26 +11,67 @@
     .session time { opacity: .7; font-size: .9rem; }
     .exercises { margin: .25rem 0 0; padding-left: 1.25rem; }
 </style>
+
 <h1>Training sessions</h1>
-{% if sessions %}
-<ul class="sessions">
-    {% for session in sessions %}
-    <li class="session">
-        <h2>{{ session.type }}</h2>
-        <time datetime="{{ session.created_at|date:'c' }}">{{ session.created_at|date:"j M Y, H:i" }}</time>
-        {% if session.performed_exercises.all %}
-        <ol class="exercises">
-            {% for performed in session.performed_exercises.all %}
-            <li>{{ performed.exercise_definition.name }}</li>
-            {% endfor %}
-        </ol>
-        {% else %}
-        <p>No exercises recorded in this session.</p>
-        {% endif %}
-    </li>
-    {% endfor %}
-</ul>
-{% else %}
-<p>No sessions logged yet.</p>
-{% endif %}
+
+<p class="status" id="status" hidden></p>
+<p id="empty" hidden>No sessions logged yet.</p>
+<ul class="sessions" id="sessions" hidden></ul>
+
+<script>
+    (function () {
+        const status = document.getElementById('status');
+        const empty = document.getElementById('empty');
+        const list = document.getElementById('sessions');
+
+        function renderSession(session) {
+            const item = document.createElement('li');
+            item.className = 'session';
+
+            const heading = document.createElement('h2');
+            heading.textContent = session.type;
+            item.append(heading);
+
+            const createdAt = new Date(session.created_at);
+            const time = document.createElement('time');
+            time.dateTime = session.created_at;
+            time.textContent = createdAt.toLocaleString(undefined, {
+                day: 'numeric', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit',
+            });
+            item.append(time);
+
+            // The session serialiser nests its exercises in performed order, so
+            // a list of sessions is one request rather than one per session.
+            if (session.performed_exercises.length === 0) {
+                const note = document.createElement('p');
+                note.textContent = 'No exercises recorded in this session.';
+                item.append(note);
+                return item;
+            }
+
+            const exercises = document.createElement('ol');
+            exercises.className = 'exercises';
+            for (const performed of session.performed_exercises) {
+                const entry = document.createElement('li');
+                entry.textContent = performed.exercise_name;
+                exercises.append(entry);
+            }
+            item.append(exercises);
+            return item;
+        }
+
+        window.renderWithStatus(status, async () => {
+            const sessions = await window.gymApi.list('training-sessions/');
+
+            if (sessions.length === 0) {
+                empty.hidden = false;
+                return;
+            }
+
+            list.append(...sessions.map(renderSession));
+            list.hidden = false;
+        });
+    })();
+</script>
 {% endblock %}

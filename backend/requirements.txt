@@ -1,1 +1,2 @@
-django
+django==6.1
+djangorestframework==3.18.0

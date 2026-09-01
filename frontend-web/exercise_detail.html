@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}{{ exercise.name }} — Gym App{% endblock %}
+{% comment %} The name is only known once the API answers, so the tab title is filled in
+   by the script below rather than by the template. {% endcomment %}
+{% block title %}Exercise — Gym App{% endblock %}
 
 {% block content %}
 <style>
@@ -8,9 +10,48 @@
     .back { display: inline-block; margin-top: 1.5rem; }
 </style>
 
-<h1>{{ exercise.name }}</h1>
-<p class="meta">Added {{ exercise.created_at|date:"j M Y" }}.</p>
-<p class="meta"><code>{{ exercise.id }}</code></p>
+<h1 id="name"></h1>
+<p class="meta" id="added" hidden></p>
+<p class="meta" id="id" hidden><code></code></p>
+<p class="status" id="status" hidden></p>
 
 <a class="back" href="{% url 'exercises_catelog' %}">← Back to the catalogue</a>
+
+{# exercise_id comes from the URL: TemplateView passes its kwargs to the context. #}
+<script data-exercise-id="{{ exercise_id }}">
+    (function () {
+        const exerciseId = document.currentScript.dataset.exerciseId;
+        const status = document.getElementById('status');
+        const name = document.getElementById('name');
+        const added = document.getElementById('added');
+        const id = document.getElementById('id');
+
+        window.renderWithStatus(status, async () => {
+            let exercise;
+            try {
+                exercise = await window.gymApi.get(`exercises/${exerciseId}/`);
+            } catch (error) {
+                // A missing exercise is an ordinary outcome for a stale link, not
+                // the generic failure renderWithStatus would otherwise report.
+                if (error instanceof window.gymApi.ApiError && error.status === 404) {
+                    name.textContent = 'Exercise not found';
+                    return;
+                }
+                throw error;
+            }
+
+            document.title = `${exercise.name} — Gym App`;
+            name.textContent = exercise.name;
+
+            const createdAt = new Date(exercise.created_at);
+            added.textContent = `Added ${createdAt.toLocaleDateString(undefined, {
+                day: 'numeric', month: 'short', year: 'numeric',
+            })}.`;
+            added.hidden = false;
+
+            id.querySelector('code').textContent = exercise.id;
+            id.hidden = false;
+        });
+    })();
+</script>
 {% endblock %}

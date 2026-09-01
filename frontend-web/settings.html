@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — Gym App{% endblock %}
+
+{% block content %}
+<h1>Settings</h1>
+
+{% comment %} The only account action so far. It stays a POST form rather than a link so a
+   prefetch or a stray GET cannot end someone's session. {% endcomment %}
+<form method="post" action="{% url 'logout' %}">
+    {% csrf_token %}
+    <button class="button" type="submit">Log out</button>
+</form>
+{% endblock %}

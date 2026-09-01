@@ -1,20 +1,24 @@
 from django.db.models import Prefetch
-from django.shortcuts import render
+from rest_framework import viewsets
 
-from .models import PerformedExercise, TrainingSession
+from .models import PerformedExercise, PerformedSet, TrainingSession
+from .serializers import (
+    PerformedExerciseSerializer,
+    PerformedSetSerializer,
+    TrainingSessionSerializer,
+)
 
 
-def training_sessions(request):
-    """List the signed-in user's training sessions, newest first.
+class TrainingSessionViewSet(viewsets.ModelViewSet):
+    """`/api/training-sessions/` — the requester's own sessions, newest first."""
 
-    No @login_required: base.html gates the page body on user.is_authenticated,
-    so anonymous visitors get the "not signed in" layout instead of a redirect.
-    Filtering by an AnonymousUser would raise, hence the empty queryset.
-    """
-    if request.user.is_authenticated:
-        sessions = (
+    serializer_class = TrainingSessionSerializer
+
+    def get_queryset(self):
+        """Scoped to the requester: ownership is never a client-supplied filter."""
+        return (
             TrainingSession.objects
-            .filter(user=request.user)
+            .filter(user=self.request.user)
             .order_by('-created_at')
             .prefetch_related(
                 # One extra query for every session's exercises rather than one per
@@ -28,7 +32,43 @@ def training_sessions(request):
                 ),
             )
         )
-    else:
-        sessions = TrainingSession.objects.none()
 
-    return render(request, 'training_sessions.html', {'sessions': sessions})
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class PerformedExerciseViewSet(viewsets.ModelViewSet):
+    """`/api/performed-exercises/`, optionally filtered by `?training_session=<uuid>`."""
+
+    serializer_class = PerformedExerciseSerializer
+
+    def get_queryset(self):
+        # Reached through the session's owner, so another user's rows are simply
+        # not in the queryset -- detail routes 404 rather than 403 on them.
+        queryset = (
+            PerformedExercise.objects
+            .filter(training_session__user=self.request.user)
+            .select_related('exercise_definition')
+            .order_by('created_at')
+        )
+        training_session = self.request.query_params.get('training_session')
+        if training_session:
+            queryset = queryset.filter(training_session=training_session)
+        return queryset
+
+
+class PerformedSetViewSet(viewsets.ModelViewSet):
+    """`/api/performed-sets/`, optionally filtered by `?performed_exercise=<uuid>`."""
+
+    serializer_class = PerformedSetSerializer
+
+    def get_queryset(self):
+        queryset = (
+            PerformedSet.objects
+            .filter(performed_exercise__training_session__user=self.request.user)
+            .order_by('created_at')
+        )
+        performed_exercise = self.request.query_params.get('performed_exercise')
+        if performed_exercise:
+            queryset = queryset.filter(performed_exercise=performed_exercise)
+        return queryset

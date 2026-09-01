@@ -1,31 +1,16 @@
-from django.shortcuts import get_object_or_404, render
+from rest_framework import viewsets
 
 from .models import ExerciseDefinition
+from .serializers import ExerciseDefinitionSerializer
 
 
-def exercises_catelog(request):
-    """List the exercise catalogue, ordered by name.
+class ExerciseDefinitionViewSet(viewsets.ReadOnlyModelViewSet):
+    """`/api/exercises/` — the exercise catalogue, ordered by name.
 
-    No @login_required: base.html gates the page body on user.is_authenticated,
-    so anonymous visitors get the "not signed in" layout instead of a redirect.
+    Read-only: the catalogue is shared reference data, curated through the admin
+    rather than written by clients. Authentication comes from the project-wide
+    DEFAULT_PERMISSION_CLASSES, so an anonymous fetch gets 403 rather than rows.
     """
-    if request.user.is_authenticated:
-        exercises = ExerciseDefinition.objects.order_by('name')
-    else:
-        exercises = ExerciseDefinition.objects.none()
 
-    return render(request, 'exercises_catelog.html', {'exercises': exercises})
-
-
-def exercise_detail(request, exercise_id):
-    """One catalogue entry.
-
-    Same anonymous handling as exercises_catelog: base.html hides the body, so
-    there is nothing to look up (and nothing to leak) for a signed-out visitor.
-    """
-    if request.user.is_authenticated:
-        exercise = get_object_or_404(ExerciseDefinition, pk=exercise_id)
-    else:
-        exercise = None
-
-    return render(request, 'exercise_detail.html', {'exercise': exercise})
+    queryset = ExerciseDefinition.objects.order_by('name')
+    serializer_class = ExerciseDefinitionSerializer
