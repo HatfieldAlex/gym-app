@@ -93,10 +93,11 @@ The `[ -f ]` guard means a shell still starts cleanly if the repository is moved
 or deleted. `source ~/.bashrc` or open a new terminal to pick it up.
 
 `wt.sh` sits at the repository root, which is the worktree *container* and so is
-not inside any working tree — the file is therefore **not tracked by git**. That
-is deliberate, to keep the whole arrangement in one directory, but it does mean
-it is not backed up with the code. Moving it to `main/scripts/` and sourcing it
-from there would version it, at the cost of tying it to one worktree.
+not inside any working tree — a real file there would be invisible to git. What
+is actually there is a symlink to `main/root-files/wt.sh`, which is tracked on
+`main` like everything else. Every file the container needs lives in
+`main/root-files/`; `make root-links` publishes the lot as symlinks and prunes
+the ones whose target has gone. Run it after adding or removing anything there.
 
 ## Recreating the layout from scratch
 
@@ -116,7 +117,18 @@ Then one directory per branch:
     git worktree add deployment deployment
     git worktree add experiment -b experiment origin/main   # new branch
 
-Copy `wt.sh` in and add the `~/.bashrc` line above.
+Then publish the container's files and add the `~/.bashrc` line above:
+
+    cd main && make root-links && make hooks
+
+`make hooks` is the one step that does not survive a re-clone: git hooks live in
+`.bare/hooks/`, which is not tracked. It installs `post-commit`, `post-merge`,
+`post-checkout` and `post-rewrite`, each of which re-runs `make root-links` in
+whichever worktree git was working in — so adding a file to `root-files/` and
+committing it is enough to make it appear in the container. Worktrees share one
+hooks directory, so installing once covers every worktree, including ones you
+create later. Without the hooks nothing breaks; the links are also refreshed by
+any `make` in any worktree, just not the instant a file arrives.
 
 ## Day-to-day
 
@@ -143,4 +155,4 @@ whichever worktree holds the branch. See `main/docs/deploying.md`.
 tracked on `main` — so it is version-controlled, reviewable, and survives a
 re-clone — and surfaced at the container root as the `README.md` symlink, which
 is where you are standing when you need it. Edit it at
-`main/docs/worktrees.md`; both paths are the same file.*
+`main/root-files/README.md`; both paths are the same file.*

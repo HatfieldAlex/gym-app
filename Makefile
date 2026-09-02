@@ -33,19 +33,24 @@ BACKEND_HOST ?= 127.0.0.1
 BACKEND_PORT ?= 8000
 WEB_PORT     ?= 5173
 
-# Everything in root/ is published as a symlink into the worktree container —
-# the directory above this one, which holds .bare/ and every worktree. See
-# `make root-links` at the foot of this file.
-ROOTDIR   := root
+# Everything in root-files/ is published as a symlink into the worktree
+# container — the directory above this one, which holds .bare/ and every
+# worktree. See `make root-links` at the foot of this file.
+ROOTDIR   := root-files
 CONTAINER := $(CURDIR)/..
 
+# Set when root-links was asked for by name, rather than pulled in as a
+# prerequisite. Only then does it report a no-op or a missing container; run
+# implicitly it stays silent unless it actually changed something.
+ROOT_LINKS_ASKED := $(filter root-links,$(MAKECMDGOALS))
+
 .DEFAULT_GOAL := help
-.PHONY: help run run-backend run-web install migrate superuser dummy-data shell build serve test clean root-links
+.PHONY: help run run-backend run-web install migrate superuser dummy-data shell build serve test clean root-links hooks
 
 # Extra flags for `make dummy-data`, e.g. ARGS="--weeks 4 --users 5".
 ARGS ?=
 
-help:
+help: | root-links
 	@echo "gym-app"
 	@echo
 	@echo "  make run          both servers, ready at http://localhost:$(WEB_PORT)"
@@ -63,6 +68,9 @@ help:
 	@echo "  make build        production frontend bundle into $(WEB)/dist"
 	@echo "  make serve        build, then serve it from Django alone on :$(BACKEND_PORT)"
 	@echo "  make clean        remove the virtualenv, node_modules and dist"
+	@echo
+	@echo "  make root-links   publish root-files/ into the worktree container"
+	@echo "  make hooks        run root-links automatically on commit/merge/switch"
 
 # --- the one you want --------------------------------------------------------
 
@@ -87,7 +95,7 @@ run-web: $(NPM_STAMP)
 
 # --- setup -------------------------------------------------------------------
 
-install: $(PIP_STAMP) $(NPM_STAMP)
+install: $(PIP_STAMP) $(NPM_STAMP) | root-links
 
 $(VENV_PY):
 	@command -v $(PYTHON) >/dev/null || { echo "error: $(PYTHON) not found on PATH"; exit 1; }
@@ -136,39 +144,79 @@ serve: build migrate
 
 # --- the worktree container --------------------------------------------------
 
-# Publish the *contents* of root/ into the container directory as symlinks, so
-# files that describe the whole checkout (its README, the `wt` switcher) sit
-# where you actually stand — beside .bare/ and the worktrees — while remaining
-# tracked here on a branch. The container is outside every worktree, so a real
-# file there would be invisible to git.
+# Publish the *contents* of root-files/ into the container directory as
+# symlinks, so files that describe the whole checkout (its README, the `wt`
+# switcher) sit where you actually stand — beside .bare/ and the worktrees —
+# while remaining tracked here on a branch. The container is outside every
+# worktree, so a real file there would be invisible to git.
 #
-# Links are relative ($(notdir $(CURDIR))/root/x), so the container can be moved
-# or renamed wholesale without breaking them. Re-run after adding or deleting
-# anything in root/; it is idempotent.
+# Links are relative ($(notdir $(CURDIR))/root-files/x), so the container can be
+# moved or renamed wholesale without breaking them. Re-run after adding or
+# deleting anything in root-files/; it is idempotent.
 root-links:
 	@set -eu; \
 	container=$$(cd $(CONTAINER) && pwd); \
 	here=$$(basename $(CURDIR)); \
 	if [ ! -e "$$container/.bare" ]; then \
-	  echo "make: $$container is not a worktree container (no .bare) — nothing done" >&2; \
-	  exit 1; \
+	  if [ -n "$(ROOT_LINKS_ASKED)" ]; then \
+	    echo "make: $$container is not a worktree container (no .bare) — nothing done" >&2; \
+	  fi; \
+	  exit 0; \
 	fi; \
+	changed=0; \
 	for src in $(ROOTDIR)/*; do \
 	  [ -e "$$src" ] || continue; \
 	  name=$$(basename "$$src"); dest="$$container/$$name"; \
+	  want="$$here/$(ROOTDIR)/$$name"; \
 	  if [ -e "$$dest" ] && [ ! -L "$$dest" ]; then \
 	    echo "  skip    $$name (a real file is already there)" >&2; continue; \
 	  fi; \
-	  ln -sfn "$$here/$(ROOTDIR)/$$name" "$$dest"; \
-	  echo "  link    $$name -> $$here/$(ROOTDIR)/$$name"; \
+	  if [ "$$(readlink "$$dest" 2>/dev/null)" = "$$want" ]; then continue; fi; \
+	  ln -sfn "$$want" "$$dest"; changed=1; \
+	  echo "  link    $$name -> $$want"; \
 	done; \
 	for link in "$$container"/*; do \
 	  [ -L "$$link" ] || continue; \
 	  target=$$(readlink "$$link"); \
 	  case "$$target" in */$(ROOTDIR)/*) ;; *) continue ;; esac; \
 	  if [ ! -e "$$container/$$target" ]; then \
-	    rm "$$link"; echo "  prune   $$(basename "$$link") (target is gone)"; \
+	    rm "$$link"; changed=1; \
+	    echo "  prune   $$(basename "$$link") (target is gone)"; \
 	  fi; \
+	done; \
+	if [ "$$changed" = 0 ] && [ -n "$(ROOT_LINKS_ASKED)" ]; then \
+	  echo "  links up to date"; \
+	fi
+
+# Run root-links on every git operation that can change what is in root-files/:
+# a commit, a merge, a branch switch, a rebase. Worktrees share one hooks
+# directory (it lives in .bare/, the common git dir), so installing once covers
+# every worktree — including ones created later.
+#
+# Each hook runs from the worktree git was operating on, and defers to that
+# worktree's own Makefile, so a branch that has not got root-files/ yet does
+# nothing rather than failing.
+HOOKS     := post-commit post-merge post-checkout post-rewrite
+HOOKS_DIR := $(shell git rev-parse --git-common-dir 2>/dev/null)/hooks
+
+hooks:
+	@set -eu; \
+	if [ ! -d "$(HOOKS_DIR)" ]; then \
+	  echo "make: no git hooks directory at $(HOOKS_DIR)" >&2; exit 1; \
+	fi; \
+	for h in $(HOOKS); do \
+	  dest="$(HOOKS_DIR)/$$h"; \
+	  if [ -e "$$dest" ] && ! grep -q 'gym-app root-links hook' "$$dest" 2>/dev/null; then \
+	    echo "  skip    $$h (a different hook is already installed)" >&2; continue; \
+	  fi; \
+	  printf '%s\n' \
+	    '#!/bin/sh' \
+	    '# gym-app root-links hook — installed by `make hooks`, safe to delete.' \
+	    'top=$$(git rev-parse --show-toplevel 2>/dev/null) || exit 0' \
+	    '[ -f "$$top/Makefile" ] || exit 0' \
+	    'make --no-print-directory -C "$$top" root-links || true' > "$$dest"; \
+	  chmod +x "$$dest"; \
+	  echo "  hook    $$h"; \
 	done
 
 # --- housekeeping ------------------------------------------------------------
