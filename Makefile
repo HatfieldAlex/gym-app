@@ -34,7 +34,10 @@ BACKEND_PORT ?= 8000
 WEB_PORT     ?= 5173
 
 .DEFAULT_GOAL := help
-.PHONY: help run run-backend run-web install migrate superuser shell build serve test clean
+.PHONY: help run run-backend run-web install migrate superuser dummy-data shell build serve test clean
+
+# Extra flags for `make dummy-data`, e.g. ARGS="--weeks 4 --users 5".
+ARGS ?=
 
 help:
 	@echo "gym-app"
@@ -46,6 +49,8 @@ help:
 	@echo "  make install      virtualenv + pip + npm, without starting anything"
 	@echo "  make migrate      apply Django migrations"
 	@echo "  make superuser    create an admin login"
+	@echo "  make dummy-data   fill the database with athletes and months of workouts"
+	@echo "                    (ARGS=\"--weeks 4 --users 5 --append\")"
 	@echo "  make shell        Django shell inside the virtualenv"
 	@echo "  make test         Django test suite"
 	@echo
@@ -97,6 +102,12 @@ migrate: $(PIP_STAMP)
 
 superuser: $(PIP_STAMP)
 	cd $(BACKEND) && $(VENV_PY) manage.py createsuperuser
+
+# Something to look at: a few athletes, a few months of sessions, sets that get
+# heavier week by week, and one session left open. Replaces the seeded users'
+# previous sessions and leaves everyone else's alone; --append keeps them.
+dummy-data: migrate
+	cd $(BACKEND) && $(VENV_PY) manage.py seed_dummy_data $(ARGS)
 
 shell: $(PIP_STAMP)
 	cd $(BACKEND) && $(VENV_PY) manage.py shell
