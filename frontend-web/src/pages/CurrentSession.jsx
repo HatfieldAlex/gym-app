@@ -349,6 +349,34 @@ function PerformedExercise({ performed, index, rows }) {
   )
 }
 
+/** The second tap, in the place the first one was.
+ *
+ * Both ways out of a session confirm through here rather than through
+ * `window.confirm`: a blocking native dialog mid-workout is easy to dismiss by
+ * accident, lands wherever the browser puts it, and cannot be sized to a thumb.
+ * Cancel puts the button back and nothing has been sent.
+ */
+function Confirm({ question, verb, busy, onConfirm, onCancel }) {
+  return (
+    <div className="confirm">
+      <p className="confirm-question">{question}</p>
+      <div className="confirm-actions">
+        <button className="confirm-yes" type="button" onClick={onConfirm} disabled={busy}>
+          {busy ? `${verb}…` : 'Confirm'}
+        </button>
+        <button className="confirm-no" type="button" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Whether that timestamp falls on today's date, in the reader's own timezone. */
+function isToday(timestamp) {
+  return new Date(timestamp).toDateString() === new Date().toDateString()
+}
+
 /**
  * The session being trained right now: start one, or pick the open one back up.
  *
@@ -502,6 +530,80 @@ export default function CurrentSession() {
     rows.close('held')
   }
 
+  // Which way out is waiting for its second tap — 'end', 'discard' or neither.
+  // One at a time, so opening either confirmation closes the other and the two
+  // questions can never both be on screen asking about the same session.
+  const [confirming, setConfirming] = useState(null)
+  const [exiting, setExiting] = useState(false)
+  // Which control failed as well as what to say, so the message appears under
+  // the tap that failed rather than at the other end of the page.
+  const [exitError, setExitError] = useState(null)
+
+  // Only for a session left running from a previous day, which is nearly always
+  // one the user forgot to end. Mid-workout the only way out is End: a button
+  // that throws the workout away has no business sitting under the same thumb
+  // as one that keeps it.
+  const stale = session !== null && !isToday(session.started_at)
+
+  /** Back to the Start state, the session having been ended or deleted.
+   *
+   * There is nothing to write and nothing to save: every set went to the API as
+   * it was logged (A7). The client-side odds and ends do have to go, though —
+   * a held exercise or a row left armed belongs to the workout that just
+   * finished, not to the next one.
+   */
+  function leaveSession() {
+    setSession(null)
+    setConfirming(null)
+    setExitError(null)
+    releaseExercise()
+    rows.close('completed')
+  }
+
+  /** Close the workout and keep it: it is in history from here on.
+   *
+   * `end/` stamps `ended_at` server-side — the client never writes it — and the
+   * sets are already attached, so the response is not needed for anything and
+   * the page does not navigate. It simply has no open session any more.
+   */
+  async function endSession() {
+    if (exiting) return
+
+    setExiting(true)
+    setExitError(null)
+    try {
+      await api.post(`training-sessions/${session.id}/end/`, {})
+      leaveSession()
+    } catch (failure) {
+      console.error(failure)
+      // The session stays on screen with the question still open, ready to
+      // retry or to cancel out of. A failed end must never blank the page.
+      setExitError({ action: 'end', message: 'Could not end the session. Please try again.' })
+    } finally {
+      setExiting(false)
+    }
+  }
+
+  /** Throw the workout away: the DELETE cascades to its exercises and sets. */
+  async function discardSession() {
+    if (exiting) return
+
+    setExiting(true)
+    setExitError(null)
+    try {
+      await api.delete(`training-sessions/${session.id}/`)
+      leaveSession()
+    } catch (failure) {
+      console.error(failure)
+      setExitError({
+        action: 'discard',
+        message: 'Could not discard the session. Please try again.',
+      })
+    } finally {
+      setExiting(false)
+    }
+  }
+
   return (
     <>
       <h1>Current session</h1>
@@ -532,6 +634,54 @@ export default function CurrentSession() {
             </time>
             .
           </p>
+
+          {/* A quiet line rather than a banner: most of the time this session
+              is simply one the user forgot to end yesterday, and the answer is
+              still "yes, throw it away" — but it is their workout, so it says
+              when it started and asks. */}
+          {stale && (
+            <div className="stale-session">
+              {confirming === 'discard' ? (
+                <Confirm
+                  question="Discard this workout? Everything logged in it is deleted."
+                  verb="Discarding"
+                  busy={exiting}
+                  onConfirm={discardSession}
+                  onCancel={() => setConfirming(null)}
+                />
+              ) : (
+                <>
+                  <p>
+                    Started on{' '}
+                    <time dateTime={session.started_at}>
+                      {new Date(session.started_at).toLocaleDateString(undefined, {
+                        day: 'numeric',
+                        month: 'short',
+                      })}
+                    </time>
+                    . Still training?
+                  </p>
+                  <button
+                    className="discard-session"
+                    type="button"
+                    disabled={exiting}
+                    onClick={() => {
+                      setConfirming('discard')
+                      setExitError(null)
+                    }}
+                  >
+                    Discard
+                  </button>
+                </>
+              )}
+
+              {exitError?.action === 'discard' && (
+                <p className="status" data-state="error">
+                  {exitError.message}
+                </p>
+              )}
+            </div>
+          )}
 
           <section className="record-set">
             <h2>Record new exercise</h2>
@@ -670,6 +820,44 @@ export default function CurrentSession() {
                   />
                 ))}
               </ol>
+            )}
+          </section>
+
+          {/* Outside Completed exercises and at the very bottom of the page, a
+              long scroll clear of Log set: this is the one tap that closes the
+              workout, and it should take deliberate reaching for. Ending an
+              empty session is allowed and needs no special case — it lands in
+              history with no exercises, which the list and detail pages already
+              render. */}
+          <section className="end-session">
+            {confirming === 'end' ? (
+              <Confirm
+                question="End this session?"
+                verb="Ending"
+                busy={exiting}
+                onConfirm={endSession}
+                onCancel={() => setConfirming(null)}
+              />
+            ) : (
+              // Disabled only while a discard is in flight — the one moment
+              // this session might be about to stop existing.
+              <button
+                className="button"
+                type="button"
+                disabled={exiting}
+                onClick={() => {
+                  setConfirming('end')
+                  setExitError(null)
+                }}
+              >
+                End session
+              </button>
+            )}
+
+            {exitError?.action === 'end' && (
+              <p className="status" data-state="error">
+                {exitError.message}
+              </p>
             )}
           </section>
         </>

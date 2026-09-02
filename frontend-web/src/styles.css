@@ -190,6 +190,60 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
 }
 .change-exercise[disabled] { opacity: .35; cursor: default; }
 
+/* The two ways out of a session, and the confirmation they share. Both replace
+   their button in place, so the second tap lands where the first one did and
+   nothing on the page moves under the thumb. */
+.confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .75rem; }
+/* The question is the thing being asked, not a caption: full strength, unlike
+   the page's other prose. */
+.confirm-question { opacity: 1; font-weight: 600; }
+.confirm-actions { display: flex; gap: .75rem; }
+.confirm-yes,
+.confirm-no {
+    padding: .5rem 1.25rem;
+    border: 1px solid currentColor;
+    border-radius: .375rem;
+    font: inherit;
+    color: inherit;
+    background: none;
+    cursor: pointer;
+}
+/* Cancel is the harmless one and the more likely one after a mis-tap, so it is
+   the quieter of the two rather than the smaller. */
+.confirm-no { border-color: color-mix(in srgb, currentColor 45%, transparent); opacity: .8; }
+.confirm-yes[disabled],
+.confirm-no[disabled] { opacity: .35; cursor: default; }
+
+/* End session: wide and at the bottom, a scroll clear of Log set. It keeps the
+   workout, so it is never red. */
+.end-session { margin-top: 3rem; }
+.end-session .button { margin-top: 0; padding: .9rem 1.5rem; font-size: 1.05rem; }
+
+/* The line above the form on a session left running overnight. Quiet, because
+   it is not an error and the workout below it is still usable. */
+.stale-session {
+    margin-top: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: .75rem;
+}
+/* Discard deletes the workout, so it wears the same red as an armed Delete on a
+   set row -- and its Confirm does too, where End's stays plain. */
+.discard-session {
+    padding: .4rem .9rem;
+    border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+    border-radius: .375rem;
+    font: inherit;
+    font-size: .9rem;
+    color: color-mix(in srgb, red 65%, currentColor);
+    background: none;
+    cursor: pointer;
+}
+.stale-session .confirm-yes { color: color-mix(in srgb, red 65%, currentColor); }
+.stale-session .status { flex-basis: 100%; margin: 0; }
+
 /* Login */
 .login { margin-top: 1.5rem; display: inline-block; text-align: left; }
 .login p { margin: 0 0 .75rem; display: grid; gap: .25rem; }
