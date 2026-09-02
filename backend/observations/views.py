@@ -1,3 +1,5 @@
+import uuid
+
 from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -7,6 +9,7 @@ from rest_framework.response import Response
 
 from .models import PerformedExercise, PerformedSet, TrainingSession
 from .serializers import (
+    PerformedExerciseHistorySerializer,
     PerformedExerciseSerializer,
     PerformedSetSerializer,
     TrainingSessionDetailSerializer,
@@ -112,6 +115,11 @@ class PerformedExerciseViewSet(viewsets.ModelViewSet):
 
     serializer_class = PerformedExerciseSerializer
 
+    # Three past sessions is the history the zone shows (Z7); the cap is there
+    # so a hand-written URL cannot ask for the whole training log.
+    HISTORY_DEFAULT_LIMIT = 3
+    HISTORY_MAX_LIMIT = 20
+
     def get_queryset(self):
         # Reached through the session's owner, so another user's rows are simply
         # not in the queryset -- detail routes 404 rather than 403 on them.
@@ -125,6 +133,82 @@ class PerformedExerciseViewSet(viewsets.ModelViewSet):
         if training_session:
             queryset = queryset.filter(training_session=training_session)
         return queryset
+
+    # The default list route has callers; only the history action swaps
+    # serializer, the way TrainingSessionViewSet already picks one per action.
+    def get_serializer_class(self):
+        if self.action == 'history':
+            return PerformedExerciseHistorySerializer
+        return super().get_serializer_class()
+
+    @staticmethod
+    def _uuid_param(params, name, required=False):
+        """A UUID straight off the querystring, or a 400.
+
+        Filtering a UUIDField on garbage raises Django's ValidationError, which
+        DRF answers with a 500; parsing here keeps it a 400.
+        """
+        raw = params.get(name)
+        if raw is None or raw == '':
+            if required:
+                raise ValidationError({'detail': f'{name} is required.'})
+            return None
+        try:
+            return uuid.UUID(raw)
+        except (ValueError, AttributeError, TypeError):
+            raise ValidationError({'detail': f'{name} is not a valid id.'})
+
+    @classmethod
+    def _limit_param(cls, params):
+        """How many past performances to answer with, or a 400."""
+        raw = params.get('limit')
+        if raw is None:
+            return cls.HISTORY_DEFAULT_LIMIT
+        try:
+            limit = int(raw)
+        except (TypeError, ValueError):
+            raise ValidationError({'detail': 'limit must be a whole number above zero.'})
+        if limit < 1:
+            raise ValidationError({'detail': 'limit must be a whole number above zero.'})
+        # Over the cap is not a mistake worth an error, just more than we give.
+        return min(limit, cls.HISTORY_MAX_LIMIT)
+
+    @action(detail=False)
+    def history(self, request):
+        """The last few times the requester trained one movement, newest first.
+
+        A bare array, not a page: the client asks for at most a handful of rows
+        (Z7) and having never done the movement is an answer, so `[]` with 200.
+        """
+        params = request.query_params
+        exercise_definition = self._uuid_param(params, 'exercise_definition', required=True)
+        exclude_session = self._uuid_param(params, 'exclude_session')
+
+        limit = self._limit_param(params)
+
+        # Scoped through the session's owner, like every queryset here, but
+        # ordered on its own terms: history is by when the training happened.
+        queryset = (
+            PerformedExercise.objects
+            .filter(
+                training_session__user=self.request.user,
+                exercise_definition=exercise_definition,
+            )
+            .select_related('exercise_definition', 'training_session')
+            .prefetch_related(
+                Prefetch(
+                    'performed_sets',
+                    queryset=PerformedSet.objects.order_by('created_at'),
+                ),
+            )
+            .order_by('-training_session__started_at', '-created_at')
+        )
+        if exclude_session is not None:
+            # The running workout's own sets are already on screen (Z5), and
+            # showing them as "last time" would misdate them.
+            queryset = queryset.exclude(training_session=exclude_session)
+
+        return Response(self.get_serializer(queryset[:limit], many=True).data)
 
 
 class PerformedSetViewSet(viewsets.ModelViewSet):

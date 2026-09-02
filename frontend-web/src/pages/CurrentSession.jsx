@@ -28,6 +28,22 @@ function setSummary(set) {
   return weight === null ? `${set.reps} reps` : `${weight} × ${set.reps}`
 }
 
+/** When a past session was trained: "5 Aug".
+ *
+ * One format, used by every date in the zone — last time's caption and the
+ * earlier lines under it (04). Three dates on one screen in two styles would
+ * read as three different kinds of thing. Day and month only: the year is
+ * noise for a movement trained within living memory, and the machine-readable
+ * value is on the element for anything that wants the rest.
+ */
+function SessionDate({ at }) {
+  return (
+    <time dateTime={at}>
+      {new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+    </time>
+  )
+}
+
 /** One logged set: what it was, and the two ways to take it back.
  *
  * Buttons rather than a swipe (A8) — this runs on a desktop too — and small
@@ -36,17 +52,43 @@ function setSummary(set) {
  * Delete arms on the first tap and goes through on the second, so nothing
  * mid-workout is one careless tap from gone. The armed state lives in `rows`
  * rather than here, because tapping anything else has to disarm it.
+ *
+ * In the zone the row knows two sets rather than one (03): `lastTime` is the
+ * matching set from the previous session and `set` is this session's, either of
+ * which can be missing when one workout ran longer than the other. `lastTime`
+ * absent altogether means there is no such column — Completed exercises passes
+ * nothing and renders exactly as it did.
  */
-function SetRow({ set, number, scope, rows }) {
-  const row = `${scope}:${set.id}`
-  const armed = rows.armed === row
-  const failure = rows.failure?.row === row ? rows.failure.message : null
+function SetRow({ set, number, scope, rows, lastTime }) {
+  // A row this session has not reached yet has no set to act on, so it has no
+  // row identity either: nothing can be opened, armed or failed on it.
+  const row = set === null ? null : `${scope}:${set.id}`
+  const armed = row !== null && rows.armed === row
+  const failure = row !== null && rows.failure?.row === row ? rows.failure.message : null
 
   return (
     <li className="set">
       <span className="set-number">{number}</span>
 
-      {rows.open === row ? (
+      {/* Last time's set: read-only, and not a tap target of any kind. Fixing a
+          set from a finished workout is the session detail page's job, and a
+          mis-tap here would rewrite history without saying so. */}
+      {lastTime !== undefined && (
+        // `data-none` is the styling hook for "this workout stopped short", on
+        // whichever side stopped: a dash is an absence, not a value, and 05
+        // reads it at a different weight from the numbers around it.
+        <span className="set-last" data-none={lastTime === null ? '' : undefined}>
+          {lastTime === null ? '—' : setSummary(lastTime)}
+        </span>
+      )}
+
+      {set === null ? (
+        // Last time went a set further than this session has. The dash is the
+        // second most useful thing on the screen: one more to go.
+        <span className="set-measures" data-none="">
+          —
+        </span>
+      ) : rows.open === row ? (
         // Nested in the <li> so the row keeps its number and its place: this is
         // the same set, being corrected, not a form standing in for it. The
         // boxes are labelled for a screen reader only — a visible label per box
@@ -136,15 +178,36 @@ function SetRow({ set, number, scope, rows }) {
  *
  * `performed_sets` arrives in the order the sets were logged, so nothing is
  * sorted here. An exercise with none says so rather than leaving a gap.
+ *
+ * `lastTime` is the previous session's sets when the zone is showing them
+ * beside these (03), and absent when it is not. With it, the list is *one row
+ * per set number* rather than two lists side by side, and it runs as far as
+ * whichever workout ran longer: set 2 sits beside set 2, and a set number with
+ * no counterpart shows a dash on that side.
  */
-function SetList({ sets, scope, rows }) {
-  if (sets.length === 0) return <p>No sets logged yet.</p>
+function SetList({ sets, scope, rows, lastTime }) {
+  const previous = lastTime ?? []
+  const length = Math.max(sets.length, previous.length)
+  if (length === 0) return <p>No sets logged yet.</p>
 
   return (
-    <ol className="sets">
-      {sets.map((set, index) => (
-        <SetRow key={set.id} set={set} number={index + 1} scope={scope} rows={rows} />
-      ))}
+    // Two columns or one: the same rows are rendered without a comparison
+    // beside them in Completed exercises and on a movement's first time, and
+    // the two-column sizing (05) is only right when there is a second column.
+    <ol className={lastTime === undefined ? 'sets' : 'sets sets--paired'}>
+      {Array.from({ length }, (unused, index) => {
+        const set = sets[index] ?? null
+        return (
+          <SetRow
+            key={set === null ? `gap:${index}` : set.id}
+            set={set}
+            number={index + 1}
+            scope={scope}
+            rows={rows}
+            lastTime={lastTime === undefined ? undefined : (previous[index] ?? null)}
+          />
+        )
+      })}
     </ol>
   )
 }
@@ -441,6 +504,13 @@ export default function CurrentSession() {
   // dropped with the exercise, in `releaseExercise`.
   const [alreadyThere, setAlreadyThere] = useState(null)
 
+  // Whether the page is the zone. One boolean is the whole mechanism (Z4):
+  // recording a movement is a state of this tab, not a destination, so there is
+  // no route, no query parameter, no history entry and nothing persisted — a
+  // reload comes back to the session page, exactly as it already came back to
+  // the dropdown with the hold dropped (A10).
+  const [zoneOpen, setZoneOpen] = useState(false)
+
   // What has already been done to the held exercise in this session, read off
   // the same `session` state the list below reads — not a second copy of it.
   // No block at all is the ordinary case: the exercise has simply not been
@@ -450,6 +520,34 @@ export default function CurrentSession() {
       (performed) => performed.exercise_definition === heldId,
     ) ?? null
   const heldSets = heldPerformed?.performed_sets ?? []
+
+  // What was done to this movement before today: fetched once, when it is
+  // picked (Z5), and refetched only when a different one is (03). Not after
+  // logging a set — the endpoint's answer cannot have changed, because the only
+  // new sets are this session's, and those are on screen already.
+  //
+  // `exclude_session` is not optional. Without it the running workout becomes
+  // its own "last time" the moment a second set goes in, and both columns show
+  // the same numbers. With no exercise held there is nothing to ask, so the
+  // loader answers `null` rather than firing a request.
+  const history = useLoad(
+    () =>
+      heldId === null || session === null
+        ? Promise.resolve(null)
+        : api.get(
+            'performed-exercises/history/' +
+              `?exercise_definition=${heldId}` +
+              `&exclude_session=${session.id}` +
+              '&limit=3',
+          ),
+    [heldId],
+  )
+  // Newest trained first, so last time is the head of it and the two behind it
+  // are the Earlier lines (04) — the same three the one request already
+  // brought back (Z7), never a second ask. Fewer than three trained sessions
+  // simply makes this shorter, or empty.
+  const lastTime = history.data?.[0] ?? null
+  const earlier = history.data?.slice(1) ?? []
 
   // What is about to be logged. Kept as typed rather than as numbers, so an
   // empty box stays empty and a decimal point survives being typed. It outlives
@@ -604,6 +702,19 @@ export default function CurrentSession() {
     rows.close('held')
   }
 
+  /** Leave the zone: the × and Log exercise, and every exit made elsewhere.
+   *
+   * It is safe to be blunt about, because it destroys nothing: every set
+   * reached the API as it was logged (A7) and letting go of a movement never
+   * deleted anything. Going out through `releaseExercise` is what stops a row
+   * left open — or, worse, left armed for deletion — from being there waiting
+   * when the zone is opened again.
+   */
+  function closeZone() {
+    releaseExercise()
+    setZoneOpen(false)
+  }
+
   // Which way out is waiting for its second tap — 'end', 'discard' or neither.
   // One at a time, so opening either confirmation closes the other and the two
   // questions can never both be on screen asking about the same session.
@@ -623,14 +734,15 @@ export default function CurrentSession() {
    *
    * There is nothing to write and nothing to save: every set went to the API as
    * it was logged (A7). The client-side odds and ends do have to go, though —
-   * a held exercise or a row left armed belongs to the workout that just
-   * finished, not to the next one.
+   * a held exercise, an open zone or a row left armed belongs to the workout
+   * that just finished, not to the next one — a session ended or discarded can
+   * never leave the zone up over no session at all.
    */
   function leaveSession() {
     setSession(null)
     setConfirming(null)
     setExitError(null)
-    releaseExercise()
+    closeZone()
     rows.close('completed')
   }
 
@@ -701,78 +813,43 @@ export default function CurrentSession() {
         </>
       )}
 
-      {session && (
-        <>
-          <p className="meta">
-            Started{' '}
-            <time dateTime={session.started_at}>
-              {new Date(session.started_at).toLocaleTimeString(undefined, {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </time>
-            .
-          </p>
+      {session &&
+        (zoneOpen ? (
+          /* The takeover (Z1): while the zone is open the page renders it
+             *instead of* its other contents rather than on top of them, so
+             there is nothing to position, nothing to stack, no scroll to lock
+             and no focus to trap. The <h1> above stays, so the user always
+             knows which tab they are on, and the nav bar is App.jsx's, outside
+             this page and untouched.
 
-          {/* A quiet line rather than a banner: most of the time this session
-              is simply one the user forgot to end yesterday, and the answer is
-              still "yes, throw it away" — but it is their workout, so it says
-              when it started and asks. */}
-          {stale && (
-            <div className="stale-session">
-              {confirming === 'discard' ? (
-                <Confirm
-                  question="Discard this workout? Everything logged in it is deleted."
-                  verb="Discarding"
-                  busy={exiting}
-                  onConfirm={discardSession}
-                  onCancel={() => setConfirming(null)}
-                />
-              ) : (
-                <>
-                  <p>
-                    Started on{' '}
-                    <time dateTime={session.started_at}>
-                      {new Date(session.started_at).toLocaleDateString(undefined, {
-                        day: 'numeric',
-                        month: 'short',
-                      })}
-                    </time>
-                    . Still training?
-                  </p>
-                  <button
-                    className="discard-session"
-                    type="button"
-                    disabled={exiting}
-                    onClick={() => {
-                      setConfirming('discard')
-                      setExitError(null)
-                    }}
-                  >
-                    Discard
-                  </button>
-                </>
-              )}
-
-              {exitError?.action === 'discard' && (
-                <p className="status" data-state="error">
-                  {exitError.message}
-                </p>
-              )}
+             It keeps `record-set`, the class the recording setup below was
+             already laid out by: this is that section given the whole screen,
+             not a new one. */
+          <section className="record-set exercise-zone">
+            <div className="zone-header">
+              {/* What the screen is about: the movement once one is held, and
+                  the question until then (Z2). React escapes it for us —
+                  catalogue names are user data. */}
+              <h2>{held ? held.name : 'Record new exercise'}</h2>
+              {/* The only way out, and there is one of it (Z3): no Escape, no
+                  browser Back, no tap-outside, because under Z1 there is no
+                  outside. Blunt on purpose — it destroys nothing. */}
+              <button
+                className="zone-close"
+                type="button"
+                aria-label="Close"
+                onClick={closeZone}
+              >
+                ×
+              </button>
             </div>
-          )}
-
-          <section className="record-set">
-            <h2>Record new exercise</h2>
 
             {held ? (
               <div className="held-exercise">
-                {/* React escapes it for us: catalogue names are user data. */}
-                <p className="held-name">Recording {held.name}</p>
-
                 {/* Only after a typed name turned out to exist already, and only
                     for as long as this movement is held. Neutral: nothing went
-                    wrong, and the useful news is above it. */}
+                    wrong, and the movement it is about is the zone's heading,
+                    directly above it. */}
                 {alreadyThere && (
                   <p className="status">{alreadyThere} was already in the catalogue.</p>
                 )}
@@ -832,17 +909,17 @@ export default function CurrentSession() {
                       <button
                         className="log-exercise"
                         type="button"
-                        onClick={releaseExercise}
+                        onClick={closeZone}
                         disabled={logging}
                       >
                         Log exercise
                       </button>
                     )}
-                    {/* The same act as Log exercise on the client — both let go
-                        of the hold — but a different thing to the user: this one
-                        is "wrong exercise, take me back", not "that movement is
-                        done". Two labels for one code path is the point, not an
-                        oversight. */}
+                    {/* Nearly the same act as Log exercise — both let go of the
+                        hold — but a different thing to the user, and now a
+                        different destination: this one is "wrong exercise, take
+                        me back", so it stays in the zone and asks again, where
+                        "that movement is done" leaves. */}
                     <button
                       className="change-exercise"
                       type="button"
@@ -867,8 +944,81 @@ export default function CurrentSession() {
                     list grows by a row every time Log set is tapped, and above
                     the boxes each new set would push the button another row
                     down the screen; below them, the fifth set is logged from
-                    the same place as the first. */}
-                <SetList sets={heldSets} scope="held" rows={rows} />
+                    the same place as the first. Last time's sets arrive into
+                    the same place, beside them, and for the same reason:
+                    nothing that loads may move Log set.
+
+                    All three states before there is a comparison are ordinary
+                    and none of them is an error. A history that will not load
+                    is a nicety that did not arrive: it never disables Log set,
+                    never blanks the zone and never reaches <Status>, which
+                    speaks for the session. */}
+                <div className="last-time">
+                  {history.state === 'loading' && <p className="last-time-note">Loading…</p>}
+
+                  {history.state === 'error' && (
+                    <p className="status" data-state="error">
+                      Could not load what you did last time.
+                    </p>
+                  )}
+
+                  {history.state === 'ready' && lastTime === null && (
+                    <p className="last-time-note">
+                      First time — nothing recorded for this exercise yet.
+                    </p>
+                  )}
+
+                  {/* Two headers over two columns, and the date under the
+                      first: the block means nothing without knowing when last
+                      time was. */}
+                  {lastTime !== null && (
+                    <div className="paired-heads">
+                      <span className="set-number" />
+                      <span className="set-last">
+                        Last time
+                        <SessionDate at={lastTime.training_session_started_at} />
+                      </span>
+                      <span className="set-measures">This session</span>
+                    </div>
+                  )}
+
+                  <SetList
+                    sets={heldSets}
+                    scope="held"
+                    rows={rows}
+                    lastTime={lastTime === null ? undefined : lastTime.performed_sets}
+                  />
+
+                  {/* The two sessions before last time, a line each: the date
+                      and what was lifted, run together in performed order. One
+                      session is a target; three are a direction (Z7).
+
+                      A line, not a row and not a table — nothing here is meant
+                      to be read against the numbers above, only glanced at —
+                      and nothing here is tappable: history is fixed on this
+                      screen, and the session detail page is where an old set
+                      gets fixed.
+
+                      No heading when there is nothing under it. A movement done
+                      exactly once before would otherwise show an empty
+                      "Earlier", which reads as something that failed to
+                      load. */}
+                  {earlier.length > 0 && (
+                    <div className="earlier-sessions">
+                      <h3>Earlier</h3>
+                      <ul>
+                        {earlier.map((performed) => (
+                          <li key={performed.id}>
+                            <SessionDate at={performed.training_session_started_at} />
+                            <span>
+                              {performed.performed_sets.map(setSummary).join(', ')}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : adding ? (
               /* In place of the dropdown, not beside it: the section shows one
@@ -919,67 +1069,140 @@ export default function CurrentSession() {
               </>
             )}
           </section>
+        ) : (
+          <>
+            <p className="meta">
+              Started{' '}
+              <time dateTime={session.started_at}>
+                {new Date(session.started_at).toLocaleTimeString(undefined, {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </time>
+              .
+            </p>
 
-          {/* Read straight off `session`, the one copy of the workout this page
-              keeps. A set logged by the form above lands here the moment its
-              POST resolves, with nothing wired between the two. */}
-          <section className="completed-exercises">
-            <h2>Completed exercises</h2>
-            {session.performed_exercises.length === 0 ? (
-              <p>No exercises logged yet.</p>
-            ) : (
-              <ol className="performed-exercises">
-                {session.performed_exercises.map((performed, index) => (
-                  <PerformedExercise
-                    key={performed.id}
-                    performed={performed}
-                    index={index + 1}
-                    rows={rows}
+            {/* A quiet line rather than a banner: most of the time this session
+                is simply one the user forgot to end yesterday, and the answer is
+                still "yes, throw it away" — but it is their workout, so it says
+                when it started and asks. */}
+            {stale && (
+              <div className="stale-session">
+                {confirming === 'discard' ? (
+                  <Confirm
+                    question="Discard this workout? Everything logged in it is deleted."
+                    verb="Discarding"
+                    busy={exiting}
+                    onConfirm={discardSession}
+                    onCancel={() => setConfirming(null)}
                   />
-                ))}
-              </ol>
-            )}
-          </section>
+                ) : (
+                  <>
+                    <p>
+                      Started on{' '}
+                      <time dateTime={session.started_at}>
+                        {new Date(session.started_at).toLocaleDateString(undefined, {
+                          day: 'numeric',
+                          month: 'short',
+                        })}
+                      </time>
+                      . Still training?
+                    </p>
+                    <button
+                      className="discard-session"
+                      type="button"
+                      disabled={exiting}
+                      onClick={() => {
+                        setConfirming('discard')
+                        setExitError(null)
+                      }}
+                    >
+                      Discard
+                    </button>
+                  </>
+                )}
 
-          {/* Outside Completed exercises and at the very bottom of the page, a
-              long scroll clear of Log set: this is the one tap that closes the
-              workout, and it should take deliberate reaching for. Ending an
-              empty session is allowed and needs no special case — it lands in
-              history with no exercises, which the list and detail pages already
-              render. */}
-          <section className="end-session">
-            {confirming === 'end' ? (
-              <Confirm
-                question="End this session?"
-                verb="Ending"
-                busy={exiting}
-                onConfirm={endSession}
-                onCancel={() => setConfirming(null)}
-              />
-            ) : (
-              // Disabled only while a discard is in flight — the one moment
-              // this session might be about to stop existing.
-              <button
-                className="button button--tap button--major"
-                type="button"
-                disabled={exiting}
-                onClick={() => {
-                  setConfirming('end')
-                  setExitError(null)
-                }}
-              >
-                End session
-              </button>
+                {exitError?.action === 'discard' && (
+                  <p className="status" data-state="error">
+                    {exitError.message}
+                  </p>
+                )}
+              </div>
             )}
 
-            {exitError?.action === 'end' && (
-              <p className="status" data-state="error">
-                {exitError.message}
-              </p>
-            )}
-          </section>
-        </>
-      )}
+            {/* The tab's one control (Z2): the chooser and its heading are
+                inside the zone now, so what stands here is the door to it.
+                Full width and unmistakable, the treatment Start session and
+                End session already have. */}
+            <button
+              className="button button--tap button--major"
+              type="button"
+              onClick={() => setZoneOpen(true)}
+            >
+              Record new exercise
+            </button>
+
+            {/* Read straight off `session`, the one copy of the workout this page
+                keeps. A set logged in the zone lands here the moment its POST
+                resolves, with nothing wired between the two — so closing the
+                zone comes back to a list that already has it. */}
+            <section className="completed-exercises">
+              <h2>Completed exercises</h2>
+              {session.performed_exercises.length === 0 ? (
+                <p>No exercises logged yet.</p>
+              ) : (
+                <ol className="performed-exercises">
+                  {session.performed_exercises.map((performed, index) => (
+                    <PerformedExercise
+                      key={performed.id}
+                      performed={performed}
+                      index={index + 1}
+                      rows={rows}
+                    />
+                  ))}
+                </ol>
+              )}
+            </section>
+
+            {/* Outside Completed exercises and at the very bottom of the page, a
+                long scroll clear of Log set: this is the one tap that closes the
+                workout, and it should take deliberate reaching for. Ending an
+                empty session is allowed and needs no special case — it lands in
+                history with no exercises, which the list and detail pages already
+                render. */}
+            <section className="end-session">
+              {confirming === 'end' ? (
+                <Confirm
+                  question="End this session?"
+                  verb="Ending"
+                  busy={exiting}
+                  onConfirm={endSession}
+                  onCancel={() => setConfirming(null)}
+                />
+              ) : (
+                // Disabled only while a discard is in flight — the one moment
+                // this session might be about to stop existing.
+                <button
+                  className="button button--tap button--major"
+                  type="button"
+                  disabled={exiting}
+                  onClick={() => {
+                    setConfirming('end')
+                    setExitError(null)
+                  }}
+                >
+                  End session
+                </button>
+              )}
+
+              {exitError?.action === 'end' && (
+                <p className="status" data-state="error">
+                  {exitError.message}
+                </p>
+              )}
+            </section>
+          </>
+        ))}
     </>
   )
 }
