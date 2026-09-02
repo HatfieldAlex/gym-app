@@ -58,36 +58,10 @@ export default function ExerciseCatalogue() {
 
       {exercises !== null && (
         <>
-          {/* Above the list: the list can be long, and the point of the page is
-              no longer only to read it. The input event is caught here, as it
-              bubbles out of the form, because typing the next name is what
-              makes the last one's confirmation stale — and the form's business
-              is the request, not what the page said about the one before. */}
-          <section
-            className="add-exercise"
-            onInput={() => {
-              setAdded(null)
-              setDuplicate(null)
-            }}
-          >
-            <h2>Add an exercise</h2>
-            <AddExerciseForm onAdded={handleAdded} onDuplicate={handleDuplicate} />
-            {added && <p className="add-exercise-added">Added {added.name}.</p>}
-            {/* Neutral, and the name is a way in rather than a scolding: the
-                same link the table's rows carry, so the movement they were
-                looking for is one tap from the box they typed it into. */}
-            {duplicate && (
-              <p className="add-exercise-added">
-                <Link to={`/exercises-catelog/${duplicate.id}`}>{duplicate.name}</Link> is already in
-                the catalogue.
-              </p>
-            )}
-          </section>
-
           {exercises.length === 0 ? (
             // With a form on the page, an empty catalogue is an invitation
             // rather than a dead end.
-            <p>No exercises yet. Add the first one above.</p>
+            <p>No exercises yet. Add the first one below.</p>
           ) : (
             <>
               <p>
@@ -112,6 +86,33 @@ export default function ExerciseCatalogue() {
               </table>
             </>
           )}
+
+          {/* Below the list: reading the catalogue is still what the page is for,
+              and the form is where you end up once the movement you were looking
+              for turned out not to be there. The input event is caught here, as
+              it bubbles out of the form, because typing the next name is what
+              makes the last one's confirmation stale — and the form's business
+              is the request, not what the page said about the one before. */}
+          <section
+            className="add-exercise"
+            onInput={() => {
+              setAdded(null)
+              setDuplicate(null)
+            }}
+          >
+            <h2>Add an exercise</h2>
+            <AddExerciseForm onAdded={handleAdded} onDuplicate={handleDuplicate} />
+            {added && <p className="add-exercise-added">Added {added.name}.</p>}
+            {/* Neutral, and the name is a way in rather than a scolding: the
+                same link the table's rows carry, so the movement they were
+                looking for is one tap from the box they typed it into. */}
+            {duplicate && (
+              <p className="add-exercise-added">
+                <Link to={`/exercises-catelog/${duplicate.id}`}>{duplicate.name}</Link> is already in
+                the catalogue.
+              </p>
+            )}
+          </section>
         </>
       )}
     </>

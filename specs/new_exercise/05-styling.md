@@ -80,7 +80,7 @@ class name is genuinely needed, and note each such change.
 - Focusing the name box on an iPhone does not zoom the page.
 - In a session, Add is at least 44px tall and reads as a sibling of `Log set`;
   Cancel is visibly quieter and is not red.
-- On the catalogue page the form sits at the ordinary page size, above the
+- On the catalogue page the form sits at the ordinary page size, below the
   table, without stretching the box across the whole width on a desktop.
 - The answer to a tap — added, already there, or failed — always appears in the
   same place under the form.
@@ -106,7 +106,7 @@ The same two forms, now sized for where each of them stands.
 - **Mid-workout it is thumb-sized.** The box and the Add button are as big as
   everything else on the session page, on one line, and Add sits where Log set
   sits — the hand does not have to learn a new place.
-- **On the catalogue page it is a page form**, ordinary sized, above the list,
+- **On the catalogue page it is a page form**, ordinary sized, below the list,
   not stretched across a desktop screen.
 - **Typing a name is not fought.** No autocorrect popup, no red spell-check
   underline under `Zercher`, no zoom when the box is focused on a phone.
