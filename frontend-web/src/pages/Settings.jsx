@@ -61,6 +61,62 @@ function LoggedNotes() {
   )
 }
 
+function ExportSection() {
+  // Its own busy/failed, like LoggedNotes' own load: a failed download leaves
+  // Log out above and the notes below untouched.
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  async function handleDownload() {
+    setBusy(true)
+    setFailed(false)
+    try {
+      const { blob, filename } = await api.download('export/')
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      // The anchor is in the document before it is clicked (Firefox ignores a
+      // click on a detached one), and the object URL is revoked on the next
+      // tick rather than immediately (Safari cancels a save whose URL goes in
+      // the same task).
+      document.body.append(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (error) {
+      console.error(error)
+      setFailed(true)
+    } finally {
+      // Unlike Log out, this page is still standing afterwards.
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="export-section">
+      <h2>Download your data</h2>
+      <p className="export-summary">
+        A zip of everything you can see in the app: one CSV per table, and{' '}
+        <code>workouts.csv</code> with a row for every set you have logged.
+      </p>
+      <button
+        className="button button--tap"
+        type="button"
+        onClick={handleDownload}
+        disabled={busy}
+      >
+        {busy ? 'Preparing…' : 'Download'}
+      </button>
+      {failed && (
+        <p className="status" data-state="error">
+          Could not prepare your download. Please try again.
+        </p>
+      )}
+    </section>
+  )
+}
+
 export default function Settings() {
   useDocumentTitle('Settings — Gym App')
   const { logOut } = useAuth()
@@ -94,6 +150,10 @@ export default function Settings() {
           Could not log out. Please try again.
         </p>
       )}
+
+      {/* An account action belongs with the other account action, and the
+          list of notes reads last. */}
+      <ExportSection />
 
       {/* Its own component, so a failed load is the section's problem and Log
           out above it keeps working. */}

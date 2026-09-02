@@ -801,7 +801,6 @@ nav .feedback-marker:active {
 /* Your notes: the record on Settings that a logged thought was kept. Left
    aligned inside a centred <main>, as every other list in the app is. */
 .notes-section { margin-top: 2.5rem; text-align: left; }
-.notes-section h2 { margin: 0; font-size: 1.1rem; }
 .notes { list-style: none; margin: 1rem 0 0; padding: 0; max-width: 30rem; }
 .note + .note { margin-top: 1.25rem; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); padding-top: 1.25rem; }
 /* A note is free text and can run to paragraphs: its own line breaks are kept,
@@ -813,3 +812,13 @@ nav .feedback-marker:active {
    at: left to itself, one /exercises-catelog/<uuid> widens the whole page on a
    narrow phone. Same reason as `.feedback-path` above. */
 .note-meta { margin-top: .35rem; font-size: .85rem; overflow-wrap: anywhere; }
+
+/* Download your data: the zip of everything, offered under Log out. Settings
+   has two sections now and they sit the same distance apart; the heading rule
+   is shared rather than written twice, because two <h2>s on one page that drift
+   to different sizes is the whole risk here. */
+.export-section { margin-top: 2.5rem; text-align: left; }
+.notes-section h2, .export-section h2 { margin: 0; font-size: 1.1rem; }
+/* The quiet register of a caption, capped at the width the notes list uses so
+   the sentence wraps rather than running the width of a desktop window. */
+.export-summary { margin: .5rem 0 1rem; max-width: 30rem; font-size: .9rem; opacity: .7; }
