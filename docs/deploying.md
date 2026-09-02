@@ -39,14 +39,14 @@ empty environment is still a working `make run`.
 
 ## Plans
 
-Both are the cheapest tier that exists.
-
-* **Eco dynos** — $5/month for 1,000 dyno-hours shared across the whole
-  account. An Eco dyno sleeps after 30 minutes without traffic and takes a few
-  seconds to wake, so the first request after an idle spell is slow. `basic`
-  ($7/month per dyno) is the next step up and does not sleep.
-* **`heroku-postgresql:essential-0`** — $5/month, 1 GB, 20 connections. No
-  follower and no rollback; `pg:backups` capture is the whole backup story.
+* **One Basic web dyno** — $7/month, 512 MB, always awake. `eco` is the one
+  tier below it at $5/month for 1,000 dyno-hours shared across the whole
+  account, but it needs an account-level Eco subscription enabled from the
+  dashboard, and an Eco dyno sleeps after 30 minutes without traffic. Switching
+  is `heroku ps:type eco -a gym-app-prod` once that subscription exists.
+* **`heroku-postgresql:essential-0`** — $5/month, the cheapest Postgres tier:
+  1 GB, 20 connections. No follower and no rollback, so `pg:backups` capture is
+  the whole backup story.
 
 ## Deploying a change
 
