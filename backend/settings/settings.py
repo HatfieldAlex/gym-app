@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'catalog',
     'protocols',
     'observations',
+    'feedback',
 ]
 
 MIDDLEWARE = [

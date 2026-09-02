@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom'
 
+import FeedbackMarker from './FeedbackMarker.jsx'
+
 const LINKS = [
   { to: '/', label: 'Home', end: true },
   { to: '/current-session', label: 'Current session' },
@@ -17,6 +19,7 @@ export default function Nav() {
           {label}
         </NavLink>
       ))}
+      <FeedbackMarker />
     </nav>
   )
 }
