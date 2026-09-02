@@ -1,0 +1,4 @@
+# Heroku's Python buildpack looks for this file in the repository root, while
+# the application it describes lives in backend/. Nothing is declared here --
+# the dependency list has one home.
+-r backend/requirements.txt

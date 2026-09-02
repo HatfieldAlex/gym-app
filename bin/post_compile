@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#
+# Run by Heroku's Python buildpack at the end of the build. This is the last
+# moment with a writable slug, so collectstatic has to happen here rather than
+# in the release phase, whose filesystem is thrown away.
+#
+# The Node buildpack has already run by this point, so frontend-web/dist exists
+# and settings.STATICFILES_DIRS picks it up.
+set -euo pipefail
+
+cd backend
+python manage.py collectstatic --noinput

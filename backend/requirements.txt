@@ -1,2 +1,10 @@
 django==6.1
 djangorestframework==3.18.0
+
+# --- serving ----------------------------------------------------------------
+# Installed locally too, rather than in a separate requirements-prod.txt: the
+# venv then matches the dyno, so a settings change can be tried before it ships.
+gunicorn==26.2.0
+whitenoise==6.12.0
+dj-database-url==3.1.2
+psycopg[binary]==3.3.5

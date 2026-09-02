@@ -1,0 +1,11 @@
+{
+  "name": "gym-app",
+  "private": true,
+  "description": "Build shim: Heroku's Node buildpack detects on a root package.json, but the frontend it has to build lives in frontend-web/.",
+  "scripts": {
+    "build": "npm --prefix frontend-web ci --include=dev && npm --prefix frontend-web run build && rm -rf frontend-web/node_modules"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}

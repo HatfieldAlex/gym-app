@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -22,16 +23,49 @@ FRONTEND_WEB_DIR = REPO_DIR / 'frontend-web'
 FRONTEND_WEB_DIST = FRONTEND_WEB_DIR / 'dist'
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
+# Configuration
+#
+# Everything below that differs between a laptop and a deployed dyno is read
+# from the environment, with the development answer as the default -- so an
+# empty environment is still a working `make run`, and the deployment is a set
+# of config vars rather than a second settings module. See docs/deploying.md.
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-1qjo=7)4&fi%mt_mi=l$+4pd^afry0e6hocubep*^0-njjdqns'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+def _env_flag(name, default):
+    """A boolean config var. Unset means `default`; anything else is parsed."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {'1', 'true', 'yes', 'on'}
 
-ALLOWED_HOSTS = []
+
+def _env_list(name):
+    """A comma-separated config var, as a list with the blanks dropped."""
+    return [part.strip() for part in os.environ.get(name, '').split(',') if part.strip()]
+
+
+# SECURITY WARNING: keep the secret key used in production secret! The literal
+# below is the development one and is public; deployments set DJANGO_SECRET_KEY.
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-1qjo=7)4&fi%mt_mi=l$+4pd^afry0e6hocubep*^0-njjdqns',
+)
+
+# SECURITY WARNING: don't run with debug turned on in production! Deployments
+# set DJANGO_DEBUG=False, which also switches on the hardening at the foot of
+# this file.
+DEBUG = _env_flag('DJANGO_DEBUG', True)
+
+# With DEBUG on Django allows localhost by itself, so this stays empty locally.
+ALLOWED_HOSTS = _env_list('DJANGO_ALLOWED_HOSTS')
+
+# Unsafe requests over HTTPS are checked against Origin as well as Host, and
+# that check has no implicit localhost. The hosts we accept are the origins we
+# accept; a leading dot in ALLOWED_HOSTS is a wildcard and spells differently here.
+CSRF_TRUSTED_ORIGINS = [
+    'https://*%s' % host if host.startswith('.') else 'https://%s' % host
+    for host in ALLOWED_HOSTS
+]
 
 
 # Application definition
@@ -54,6 +88,11 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Serves everything under STATIC_ROOT, so the dyno needs no separate web
+    # server in front of gunicorn -- directly after SecurityMiddleware, as its
+    # documentation requires. Left out in development, where runserver's own
+    # staticfiles handler does the job and nothing has been collected yet.
+    *(['whitenoise.middleware.WhiteNoiseMiddleware'] if not DEBUG else []),
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -87,12 +126,28 @@ WSGI_APPLICATION = 'settings.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
+# SQLite is the development default; a deployment sets DATABASE_URL and that
+# wins. Heroku Postgres publishes the variable itself when the add-on is
+# attached, so there is nothing to configure by hand.
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+if os.environ.get('DATABASE_URL'):
+    import dj_database_url
+
+    # Connections are held open between requests and checked before reuse:
+    # the Essential tier closes idle ones, and a stale handle surfaces as a
+    # failed request rather than a reconnect unless it is health-checked.
+    DATABASES['default'] = dj_database_url.config(
+        conn_max_age=600,
+        conn_health_checks=True,
+        ssl_require=True,
+    )
 
 
 # Django REST Framework
@@ -157,6 +212,23 @@ STATIC_URL = 'static/'
 # Vite builds with base='/static/', so its hashed bundles resolve here.
 STATICFILES_DIRS = [FRONTEND_WEB_DIST] if FRONTEND_WEB_DIST.is_dir() else []
 
+# Where collectstatic writes and WhiteNoise reads. Populated during the Heroku
+# build (bin/post_compile); `make run` never looks at it, serving through the
+# staticfiles finders instead.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        # Compressed but not hashed: Vite already puts a content hash in every
+        # filename it emits, so a manifest would add nothing but a way for the
+        # build to fail on an asset reference it could not resolve.
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
+    },
+}
+
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
@@ -175,3 +247,25 @@ MAILERS = {
 # afterwards are the SPA router's business. All that is left for Django is
 # where to send a server-side redirect to sign in -- the SPA's login route.
 LOGIN_URL = '/login'
+
+
+# Deployment hardening
+# https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
+
+# All of it is conditional on DEBUG being off, so none of it gets in the way of
+# plain http on localhost.
+
+if not DEBUG:
+    # Heroku's router terminates TLS and forwards the original scheme in this
+    # header; without it Django sees http and the redirect below never settles.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+
+    # The session cookie is the whole authentication story (see REST_FRAMEWORK
+    # above), so it must never cross the wire in clear.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+    # A year, but neither preloaded nor extended to subdomains: on a shared
+    # parent like herokuapp.com those two are somebody else's decision to make.
+    SECURE_HSTS_SECONDS = 31536000
