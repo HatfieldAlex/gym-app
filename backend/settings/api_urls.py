@@ -7,6 +7,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from catalog.views import ExerciseDefinitionViewSet
+from feedback.views import FeedbackNoteViewSet
 from observations.views import (
     PerformedExerciseViewSet,
     PerformedSetViewSet,
@@ -20,6 +21,8 @@ router.register('exercises', ExerciseDefinitionViewSet, basename='exercise')
 router.register('training-sessions', TrainingSessionViewSet, basename='trainingsession')
 router.register('performed-exercises', PerformedExerciseViewSet, basename='performedexercise')
 router.register('performed-sets', PerformedSetViewSet, basename='performedset')
+# Same reason here: a note's queryset is the signed-in user's own notes.
+router.register('feedback-notes', FeedbackNoteViewSet, basename='feedbacknote')
 
 app_name = 'api'
 urlpatterns = [

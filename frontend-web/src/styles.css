@@ -146,10 +146,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
    rather than a table cell -- it is read one-handed mid-workout, where a column
    header three rows up is no help. */
 
-/* Thumb-sized, for the one tab that is used mid-set, one-handed, with sweaty
-   hands: 44px is the smallest target that can be hit without looking at it. A
-   modifier rather than a change to `.button`, which the other pages use at a
-   desk and at their own size. */
+/* Thumb-sized, for the things that are used mid-set, one-handed, with sweaty
+   hands -- this tab, and the note panel that hangs off the nav: 44px is the
+   smallest target that can be hit without looking at it. A modifier rather
+   than a change to `.button`, which the other pages use at a desk and at their
+   own size. */
 .button--tap { min-height: 44px; padding: .75rem 1.5rem; }
 /* What the tab is allowed to be as wide as, and no narrower.
    `main` is `place-self: center` and stays that way, so its column is neither
@@ -425,3 +426,239 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
 .login { margin-top: 1.5rem; display: inline-block; text-align: left; }
 .login p { margin: 0 0 .75rem; display: grid; gap: .25rem; }
 .login input { font: inherit; padding: .4rem .5rem; }
+
+/* Feedback marker and panel: the panel is positioned against the marker rather
+   than placed in the row, so opening it moves nothing -- the page below keeps
+   its layout and its scroll position and the panel hangs over it. */
+
+/* The one rule here that is not the feature's own, and the only line of this
+   chunk that touches something shared. The row was already wider than a phone
+   before the marker joined it -- the five links alone come to ~400px at 375px
+   of screen -- and it overflowed rather than wrapped, so everything past the
+   right-hand edge could only be reached by dragging the whole page sideways.
+   The marker is last in the row, so that was the marker. Wrapping is what
+   makes it reachable, and it is nearly free: the links were already breaking
+   their own text onto a second line at that width, so the row goes from 77px
+   overflowing to 81px wrapped at 375px, once the gap between the two lines is
+   taken down to a hairline. Only the very narrowest screens pay more, at three
+   lines, and above ~640px, where the row fits on one line, none of this does
+   anything at all. `relative` is the panel's anchor while the row wraps; on
+   its own it changes nothing. */
+nav { position: relative; flex-wrap: wrap; row-gap: .25rem; }
+
+/* Flex, not inline: an inline button would sit on a text baseline and leave a
+   gap of leading under it, and the panel below is offset from this box. */
+.feedback { position: relative; display: flex; }
+/* The bulb is the whole box -- no padding, no border, a line-height of 1 --
+   so the marker is shorter than a nav link and the row is exactly as tall with
+   it as without it. Everything that has to be bigger than a bulb is drawn
+   without taking part in layout: the 44px of thumb by a pseudo-element, the
+   chip by a shadow's spread, the focus ring by an outline. */
+.feedback-marker {
+    position: relative;
+    padding: 0;
+    border: 0;
+    border-radius: .375rem;
+    font: inherit;
+    font-size: 1.15rem;
+    line-height: 1;
+    color: inherit;
+    background: none;
+    cursor: pointer;
+}
+/* 44px square of thumb around a 23px bulb: the smallest target that can be hit
+   mid-set without looking at it. It reaches into the nav's own padding above
+   and below and into half the gap beside it, so it runs into neither the edge
+   of the row nor the link before it. */
+.feedback-marker::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: max(100%, 44px);
+    height: 44px;
+}
+/* On, while its panel is open: a filled chip with a ring around it, so the
+   marker reads as a held-down key rather than as an emoji someone typed into
+   the row. Mixed into `Canvas` rather than into transparency -- the ring is a
+   second shadow painted behind the first, so a fill that let it through would
+   darken the whole chip instead of outlining it. */
+nav .feedback-marker[aria-expanded="true"] {
+    /* The same fill on the box as on the spread around it: a shadow is painted
+       outside the border box, and without this the bulb sits in a hole of bare
+       page colour in the middle of its own chip. */
+    background: color-mix(in srgb, currentColor 12%, Canvas);
+    box-shadow: 0 0 0 .45rem color-mix(in srgb, currentColor 12%, Canvas),
+                0 0 0 calc(.45rem + 1px) color-mix(in srgb, currentColor 45%, Canvas);
+}
+/* After the open state and at its specificity, so a press still answers while
+   the panel is up. */
+nav .feedback-marker:active {
+    background: color-mix(in srgb, currentColor 22%, Canvas);
+    box-shadow: 0 0 0 .45rem color-mix(in srgb, currentColor 22%, Canvas);
+}
+.feedback-marker:focus-visible,
+.feedback-kind button:focus-visible,
+.feedback-body:focus-visible,
+.feedback-actions .button:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+/* Clear of the chip, which the marker draws outside its own box. */
+.feedback-marker:focus-visible { outline-offset: .55rem; }
+
+.feedback-panel {
+    position: absolute;
+    /* Anchored to the marker, but clear of the row: the marker's box stops
+       short of the nav's own padding and bottom rule, so the offset carries
+       them before the gap. */
+    top: calc(100% + 1.5rem);
+    right: 0;
+    /* Over the page, which stacks nothing of its own. */
+    z-index: 10;
+    box-sizing: border-box;
+    /* A modest box hanging off the marker, never wider than the screen it is
+       on. Full width is the phone's rule, below. */
+    width: min(22rem, 100vw - 2rem);
+    /* Never off the bottom either: a phone held sideways has ~360px of height,
+       and a panel that grows past that puts Send where no thumb can go. It
+       scrolls inside itself instead. The subtraction is the single row of nav
+       above it plus a margin at the foot; the wrapping widths below, where the
+       row can run to three lines, take more off. */
+    max-height: calc(100dvh - 5.5rem);
+    overflow-y: auto;
+    padding: 1rem;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-radius: .5rem;
+    /* It sits over the page, so it needs a ground of its own -- and one that
+       follows the system's light and dark, as the rest of the app does. */
+    background: Canvas;
+    color: CanvasText;
+    /* Floating over the page rather than part of it. */
+    box-shadow: 0 .5rem 1.5rem color-mix(in srgb, currentColor 22%, transparent);
+}
+/* Small: the box below it is what the panel is for, and the heading is only
+   there to say which box it is. */
+.feedback-panel h2 { margin: 0 0 .35rem; font-size: 1rem; }
+/* Named for the screen reader, not for the eye: the panel's heading already
+   says what the box is for, so the label is clipped rather than drawn. */
+.feedback-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+.feedback-body {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    /* The biggest thing in the panel, and never under three lines of it. */
+    min-height: 5.5rem;
+    padding: .5rem .6rem;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-radius: .375rem;
+    font: inherit;
+    line-height: 1.5;
+    color: inherit;
+    /* The panel is the ground here; a textarea would otherwise take the
+       browser's own field colour and ignore the system's dark. */
+    background: none;
+    /* Down only: growing sideways would push the panel past the viewport. */
+    resize: vertical;
+}
+/* Send at the bottom right, where the thumb that just typed already is, and
+   Close quieter beside it. `.button` brings its own top margin, so the row
+   needs none. */
+.feedback-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+/* Quieter than Send, and not smaller: after a mis-open Close is the likelier
+   tap of the two, and a tap that is meant has to land. */
+.feedback-close { border-color: color-mix(in srgb, currentColor 45%, transparent); opacity: .8; }
+/* The captured path: information the panel already holds, sat under the
+   heading in the quiet `.status` register rather than in a field. `.status`
+   brings a top margin meant for the end of a page, which is too much here.
+   The smallest thing in the panel -- it is a receipt, not a field. */
+.feedback-path {
+    margin: 0 0 .5rem;
+    font-size: .75rem;
+    /* A path has no spaces to break at, and must not widen the panel. */
+    overflow-wrap: anywhere;
+}
+/* Three pills on one line at any width. The kind is a convenience and never a
+   decision to stop and make (B10), so the row stays small and out of the
+   textarea's way. */
+.feedback-kind { display: flex; flex-wrap: nowrap; gap: .375rem; margin-top: .5rem; }
+.feedback-kind button {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: .3rem .7rem;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-radius: 999px;
+    font: inherit;
+    font-size: .8rem;
+    line-height: 1.2;
+    color: inherit;
+    background: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+/* Chosen: a full-strength ring as well as a fill, so it is still the chosen one
+   to a reader who cannot tell the fill from the ground. The ring is a shadow
+   rather than a second pixel of border, because a pill that changes size when
+   it is picked shoves the two beside it along. */
+.feedback-kind button[aria-checked="true"] {
+    border-color: currentColor;
+    box-shadow: inset 0 0 0 1px currentColor;
+    background: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+/* Narrow enough that the row wraps (it stops at ~640px), so the marker is no
+   longer at the end of anything -- it sits wherever the wrap left it, halfway
+   across the screen. The panel hangs from the nav instead, whose box is always
+   exactly the viewport: that is what keeps it on screen and off both edges at
+   these widths. */
+@media (max-width: 660px) {
+    .feedback { position: static; }
+    .feedback-panel {
+        top: calc(100% + .5rem);
+        right: 1rem;
+        left: auto;
+        width: min(22rem, 100% - 2rem);
+        /* Three lines of links is the worst the row does at these widths, and
+           the cap has to clear all three. */
+        max-height: calc(100dvh - 9rem);
+    }
+}
+/* A phone: the whole width of the screen less a thumb's margin either side, so
+   the box is wide enough to type a sentence into. */
+@media (max-width: 480px) {
+    .feedback-panel { left: 1rem; width: auto; }
+}
+
+/* A few pixels and a fade, short enough to type through: a panel you have to
+   wait for is slower than one that is simply there. */
+@media (prefers-reduced-motion: no-preference) {
+    .feedback-panel { animation: feedback-panel-in 120ms ease-out; }
+}
+@keyframes feedback-panel-in {
+    from { opacity: 0; transform: translateY(-.25rem); }
+}
+
+/* Your notes: the record on Settings that a logged thought was kept. Left
+   aligned inside a centred <main>, as every other list in the app is. */
+.notes-section { margin-top: 2.5rem; text-align: left; }
+.notes-section h2 { margin: 0; font-size: 1.1rem; }
+.notes { list-style: none; margin: 1rem 0 0; padding: 0; max-width: 30rem; }
+.note + .note { margin-top: 1.25rem; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); padding-top: 1.25rem; }
+/* A note is free text and can run to paragraphs: its own line breaks are kept,
+   and a long unbroken run breaks rather than widening the page at 375px. Full
+   strength, unlike the <p> default: the note is the content here, not a
+   caption. */
+.note-body { opacity: 1; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* `main` is sized by what it holds, and a captured path has no spaces to break
+   at: left to itself, one /exercises-catelog/<uuid> widens the whole page on a
+   narrow phone. Same reason as `.feedback-path` above. */
+.note-meta { margin-top: .35rem; font-size: .85rem; overflow-wrap: anywhere; }

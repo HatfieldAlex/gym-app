@@ -34,6 +34,27 @@ Table catalog_exercisedefinition {
 }
 
 // ==========================================================================
+// app: feedback  (project)
+// ==========================================================================
+
+Table feedback_feedbacknote {
+  id          uuid         [pk, note: 'default set in Python: uuid.uuid4()']
+  user_id     integer      [not null, ref: > auth_user.id, note: 'on_delete=CASCADE']
+  body        text         [not null]
+  kind        varchar(8)   [not null, default: 'idea', note: 'choices: idea, bug, other']
+  page_path   varchar(200) [not null, default: '', note: 'where the writer was when the thought arrived, e.g. /current-session']
+  created_at  timestamptz  [not null, note: 'set to now() on insert (auto_now_add)']
+  resolved_at timestamptz  [null, note: 'null means the note is still outstanding']
+
+  indexes {
+    user_id [note: 'implicit: Django indexes every ForeignKey column']
+    (user_id, created_at) [name: 'feednote_user_created_idx']
+  }
+
+  Note: 'A thought logged from anywhere in the app without leaving the page.'
+}
+
+// ==========================================================================
 // app: observations  (project)
 // ==========================================================================
 
@@ -244,6 +265,10 @@ Table django_session {
 
 TableGroup catalog {
   catalog_exercisedefinition
+}
+
+TableGroup feedback {
+  feedback_feedbacknote
 }
 
 TableGroup observations {
