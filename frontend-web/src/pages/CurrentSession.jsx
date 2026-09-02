@@ -204,12 +204,16 @@ export default function CurrentSession() {
 
   /** Let go of the exercise, and of what was being typed into it.
    *
-   * Both ways out of a hold end here — backing out of a mis-tap and finishing a
-   * movement — because they are the same act on the client and neither is a
-   * request: every set was saved as it was logged (A7), so there is nothing
-   * left to write when the user is done with the exercise (A10). Nothing
-   * records that a movement was finished, so holding it again later simply
-   * continues it (A6).
+   * Both ways out of a hold end here — Change exercise backing out of a mis-tap
+   * and Log exercise finishing a movement — because they are the same act on the
+   * client and neither is a request: every set was saved as it was logged (A7),
+   * so there is nothing left to write when the user is done with the exercise
+   * (A10). Nothing records that a movement was finished, so holding it again
+   * later simply continues it (A6).
+   *
+   * Neither one deletes anything. Letting go of an exercise leaves every set
+   * logged into it exactly where it is, in Completed exercises; removing a set
+   * is chunk 05's job, on the set itself.
    */
   function releaseExercise() {
     setHeldId(null)
@@ -293,20 +297,44 @@ export default function CurrentSession() {
                   {/* One tap per set and one tap per movement: the two sizes of
                       thing this section does. Log set is off until the entry is
                       a set, and off again while it is being saved, so a second
-                      tap cannot log a second set (A9). */}
+                      tap cannot log a second set (A9).
+
+                      Change exercise sits beside them whatever has happened, so
+                      there is never a state with an exercise held and no visible
+                      way back to the dropdown. It deletes nothing — no button in
+                      this section does, at any point. Once a set is saved it
+                      stays saved, and a wrong exercise is simply left behind
+                      with whatever was logged into it. */}
                   <div className="log-set-actions">
                     <button className="button" type="submit" disabled={entry === null || logging}>
                       {logging ? 'Logging…' : 'Log set'}
                     </button>
                     {/* Saves nothing: there is nothing left to save. Do not go
-                        looking for the request. */}
+                        looking for the request. Only once there is a movement to
+                        call finished — before that, Change exercise is the way
+                        out and this would be a disabled button saying nothing. */}
+                    {heldSets.length > 0 && (
+                      <button
+                        className="log-exercise"
+                        type="button"
+                        onClick={releaseExercise}
+                        disabled={logging}
+                      >
+                        Log exercise
+                      </button>
+                    )}
+                    {/* The same act as Log exercise on the client — both let go
+                        of the hold — but a different thing to the user: this one
+                        is "wrong exercise, take me back", not "that movement is
+                        done". Two labels for one code path is the point, not an
+                        oversight. */}
                     <button
-                      className="log-exercise"
+                      className="change-exercise"
                       type="button"
                       onClick={releaseExercise}
-                      disabled={!heldSets.length || logging}
+                      disabled={logging}
                     >
-                      Log exercise
+                      Change exercise
                     </button>
                   </div>
                   {/* Beside the buttons, where the tap that failed was: nothing
@@ -317,16 +345,6 @@ export default function CurrentSession() {
                     </p>
                   )}
                 </form>
-
-                {/* Only while there is nothing to finish. Once a set exists,
-                    Log exercise is the way out, and two controls doing one thing
-                    is one too many. The way out of a mis-tap, not a control to
-                    reach for mid-set (A8). */}
-                {heldSets.length === 0 && (
-                  <button className="change-exercise" type="button" onClick={releaseExercise}>
-                    Change exercise
-                  </button>
-                )}
               </div>
             ) : (
               <>

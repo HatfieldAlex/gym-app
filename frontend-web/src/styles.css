@@ -110,19 +110,6 @@ ol.sets .set-number { min-width: 1.25rem; opacity: .7; }
 /* Its sets sit directly under the name, so the record of the movement reads as
    part of the block rather than as a list that happens to follow it. */
 .held-exercise .sets { margin-bottom: .5rem; }
-.held-exercise .change-exercise {
-    margin-top: .25rem;
-    padding: 0;
-    border: 0;
-    font: inherit;
-    font-size: .85rem;
-    color: inherit;
-    background: none;
-    opacity: .7;
-    text-decoration: underline;
-    cursor: pointer;
-}
-
 /* The two boxes sit side by side with the button below them, so logging a set is
    one glance and one tap rather than a column to scroll through. */
 .log-set { margin: .75rem 0 1rem; }
@@ -145,6 +132,24 @@ ol.sets .set-number { min-width: 1.25rem; opacity: .7; }
     cursor: pointer;
 }
 .log-exercise[disabled] { opacity: .35; text-decoration: none; cursor: default; }
+
+/* Change exercise is the way out of a wrong choice, and a way out has to be
+   findable: a bordered button beside Log set rather than the underlined
+   micro-link that stood here before, which was easy to miss -- and which
+   disappeared entirely once a set had been logged, leaving no visible way back
+   at all. Outlined and unfilled, so it still reads as secondary to Log set, and
+   never red: it throws nothing away. */
+.change-exercise {
+    padding: .5rem 1rem;
+    border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+    border-radius: .375rem;
+    font: inherit;
+    color: inherit;
+    background: none;
+    opacity: .8;
+    cursor: pointer;
+}
+.change-exercise[disabled] { opacity: .35; cursor: default; }
 
 /* Login */
 .login { margin-top: 1.5rem; display: inline-block; text-align: left; }
