@@ -29,6 +29,9 @@ export default function RequireAuth({ children }) {
         <Link className="button" to="/login">
           Log in
         </Link>
+        <p>
+          No account yet? <Link to="/signup">Sign up</Link>.
+        </p>
       </>
     )
   }

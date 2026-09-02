@@ -10,10 +10,11 @@ import Home from './pages/Home.jsx'
 import Login from './pages/Login.jsx'
 import NotFound from './pages/NotFound.jsx'
 import Settings from './pages/Settings.jsx'
+import Signup from './pages/Signup.jsx'
 import TrainingSessionDetail from './pages/TrainingSessionDetail.jsx'
 import TrainingSessions from './pages/TrainingSessions.jsx'
 
-/** Everything but the login page needs a session; wrap it once, here. */
+/** Everything but the login and signup pages needs a session; wrap it once, here. */
 function Private({ children }) {
   return <RequireAuth>{children}</RequireAuth>
 }
@@ -49,6 +50,7 @@ export default function App() {
           />
           <Route path="/settings" element={<Private><Settings /></Private>} />
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

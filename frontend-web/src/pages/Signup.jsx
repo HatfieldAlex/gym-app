@@ -5,11 +5,11 @@ import { ApiError } from '../api.js'
 import { useAuth } from '../auth.jsx'
 import { useDocumentTitle } from '../hooks.js'
 
-const WRONG_CREDENTIALS = "Your username and password didn't match. Please try again."
+const REJECTED = 'Could not create that account. Please try a different username.'
 
-export default function Login() {
-  useDocumentTitle('Log in · Gym App')
-  const { isAuthenticated, loading, logIn, username } = useAuth()
+export default function Signup() {
+  useDocumentTitle('Sign up · Gym App')
+  const { isAuthenticated, loading, signUp, username } = useAuth()
   const navigate = useNavigate()
   const [credentials, setCredentials] = useState({ username: '', password: '' })
   const [busy, setBusy] = useState(false)
@@ -24,15 +24,18 @@ export default function Login() {
     setBusy(true)
     setErrorMessage(null)
     try {
-      await logIn(credentials)
-      // Where both ends of a session used to land, by way of LOGIN_REDIRECT_URL.
+      await signUp(credentials)
+      // Signing up leaves the new account signed in, so this lands where a
+      // successful login lands rather than back at the login form.
       navigate('/')
     } catch (error) {
       console.error(error)
       setErrorMessage(
+        // A 400 here is a taken username or a blank field, and DRF says which;
+        // anything else is not the form's fault and gets the generic line.
         error instanceof ApiError && error.status === 400
-          ? (error.detail ?? WRONG_CREDENTIALS)
-          : 'Could not log in. Please try again.',
+          ? (error.detail ?? REJECTED)
+          : 'Could not sign up. Please try again.',
       )
       setBusy(false)
     }
@@ -57,7 +60,7 @@ export default function Login() {
 
   return (
     <>
-      <h1>Log in</h1>
+      <h1>Sign up</h1>
       {errorMessage && (
         <p className="status" data-state="error">
           {errorMessage}
@@ -82,18 +85,18 @@ export default function Login() {
             id="password"
             name="password"
             type="password"
-            autoComplete="current-password"
+            autoComplete="new-password"
             required
             value={credentials.password}
             onChange={update('password')}
           />
         </p>
         <button className="button" type="submit" disabled={busy}>
-          {busy ? 'Logging in…' : 'Log in'}
+          {busy ? 'Creating account…' : 'Create account'}
         </button>
       </form>
       <p>
-        No account yet? <Link to="/signup">Sign up</Link>.
+        Already have an account? <Link to="/login">Log in</Link>.
       </p>
     </>
   )

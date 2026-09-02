@@ -33,6 +33,13 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  const signUp = useCallback(async (credentials) => {
+    // The backend signs the new account in as it creates it, and answers with
+    // the same session shape as logging in, so there is nothing else to do.
+    const session = await api.post('auth/signup/', credentials)
+    setUsername(session.username)
+  }, [])
+
   const logIn = useCallback(async (credentials) => {
     const session = await api.post('auth/login/', credentials)
     setUsername(session.username)
@@ -44,8 +51,8 @@ export function AuthProvider({ children }) {
   }, [])
 
   const value = useMemo(
-    () => ({ username, isAuthenticated: username !== null, loading, logIn, logOut }),
-    [username, loading, logIn, logOut],
+    () => ({ username, isAuthenticated: username !== null, loading, signUp, logIn, logOut }),
+    [username, loading, signUp, logIn, logOut],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>
