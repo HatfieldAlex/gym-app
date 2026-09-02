@@ -78,3 +78,6 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 *.swp
+
+# Git worktrees created inside the repo root
+/.worktrees/
