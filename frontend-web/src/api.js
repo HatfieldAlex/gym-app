@@ -72,8 +72,34 @@ async function list(path) {
   return results
 }
 
+/** A file the API hands back whole: the body is bytes, not JSON. */
+async function download(path) {
+  // Its own function rather than a flag on request(): request() parses every
+  // body as JSON unconditionally, and this one is a zip. Both media types are
+  // named because DRF negotiates before the view runs and renders JSON only, so
+  // asking for the zip alone answers 406.
+  const response = await fetch(ROOT + path, {
+    headers: { Accept: 'application/zip, application/json' },
+    credentials: 'same-origin',
+  })
+
+  if (!response.ok) {
+    // The error body is still JSON, so a caller's catch sees the same ApiError
+    // and the same .detail as every other call in the app.
+    const data = await response.json().catch(() => null)
+    throw new ApiError(response.status, data)
+  }
+
+  // The server's filename is plain ASCII by construction, so one regex is
+  // enough; a download with no name beats a thrown error.
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'download.zip'
+  return { blob: await response.blob(), filename }
+}
+
 export const api = {
   list,
+  download,
   get: (path) => request('GET', path),
   post: (path, body) => request('POST', path, body),
   patch: (path, body) => request('PATCH', path, body),

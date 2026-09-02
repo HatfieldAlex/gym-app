@@ -85,6 +85,8 @@ INSTALLED_APPS = [
     'protocols',
     'observations',
     'feedback',
+    # No models; an app so `manage.py export_data` is discovered.
+    'dataexport',
 ]
 
 MIDDLEWARE = [

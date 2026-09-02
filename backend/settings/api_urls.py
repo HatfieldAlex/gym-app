@@ -7,6 +7,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from catalog.views import ExerciseDefinitionViewSet
+from dataexport.views import DataExportView
 from feedback.views import FeedbackNoteViewSet
 from observations.views import (
     PerformedExerciseViewSet,
@@ -29,4 +30,8 @@ urlpatterns = [
     # Session login/logout/whoami for the SPA, which no longer has a
     # server-rendered login form to post to.
     path('auth/', include('accounts.urls')),
+    # Not a resource collection but a single GET, so a plain path() rather than
+    # a router registration -- which is why it is absent from the DefaultRouter's
+    # API-root listing at /api/v1/.
+    path('export/', DataExportView.as_view(), name='export'),
 ] + router.urls
