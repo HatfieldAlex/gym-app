@@ -611,7 +611,12 @@ export default function CurrentSession() {
 
       {state === 'ready' && !session && (
         <>
-          <button className="button" type="button" onClick={startSession} disabled={starting}>
+          <button
+            className="button button--tap button--major"
+            type="button"
+            onClick={startSession}
+            disabled={starting}
+          >
             {starting ? 'Starting…' : 'Start session'}
           </button>
           {startError && (
@@ -691,11 +696,6 @@ export default function CurrentSession() {
                 {/* React escapes it for us: catalogue names are user data. */}
                 <p className="held-name">Recording {held.name}</p>
 
-                {/* Where the user is working, so the answer to "how many have I
-                    done, and at what?" is here rather than in the section
-                    below. */}
-                <SetList sets={heldSets} scope="held" rows={rows} />
-
                 <form className="log-set" onSubmit={logSet}>
                   <p>
                     <label htmlFor="set-weight">Weight (kg)</label>
@@ -736,7 +736,11 @@ export default function CurrentSession() {
                       stays saved, and a wrong exercise is simply left behind
                       with whatever was logged into it. */}
                   <div className="log-set-actions">
-                    <button className="button" type="submit" disabled={entry === null || logging}>
+                    <button
+                      className="button button--tap"
+                      type="submit"
+                      disabled={entry === null || logging}
+                    >
                       {logging ? 'Logging…' : 'Log set'}
                     </button>
                     {/* Saves nothing: there is nothing left to save. Do not go
@@ -775,6 +779,15 @@ export default function CurrentSession() {
                     </p>
                   )}
                 </form>
+
+                {/* Where the user is working, so the answer to "how many have I
+                    done, and at what?" is here rather than in the section
+                    below — but under the form rather than above it (07). This
+                    list grows by a row every time Log set is tapped, and above
+                    the boxes each new set would push the button another row
+                    down the screen; below them, the fifth set is logged from
+                    the same place as the first. */}
+                <SetList sets={heldSets} scope="held" rows={rows} />
               </div>
             ) : (
               <>
@@ -842,7 +855,7 @@ export default function CurrentSession() {
               // Disabled only while a discard is in flight — the one moment
               // this session might be about to stop existing.
               <button
-                className="button"
+                className="button button--tap button--major"
                 type="button"
                 disabled={exiting}
                 onClick={() => {
