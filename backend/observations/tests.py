@@ -293,3 +293,40 @@ class PerformedSetAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(PerformedSet.objects.exists())
 
+    def test_correcting_a_set_can_clear_its_weight(self):
+        """A set logged with a weight can become a bodyweight one (A5)."""
+        logged = PerformedSet.objects.create(
+            performed_exercise=self.performed, weight_kg='100.00', reps=5
+        )
+        self.client.force_login(self.user)
+        response = self.client.patch(
+            reverse('api:performedset-detail', args=[logged.pk]),
+            {'weight_kg': None, 'reps': 8},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data['weight_kg'])
+        logged.refresh_from_db()
+        self.assertIsNone(logged.weight_kg)
+        self.assertEqual(logged.reps, 8)
+
+    def test_deleting_a_set_leaves_its_exercise_behind(self):
+        """The user removed a set, not the movement: the block stays, empty."""
+        logged = PerformedSet.objects.create(performed_exercise=self.performed, reps=5)
+        self.client.force_login(self.user)
+        response = self.client.delete(reverse('api:performedset-detail', args=[logged.pk]))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(PerformedSet.objects.exists())
+        self.assertTrue(PerformedExercise.objects.filter(pk=self.performed.pk).exists())
+
+    def test_another_users_set_cannot_be_edited_or_deleted(self):
+        logged = PerformedSet.objects.create(performed_exercise=self.other_performed, reps=5)
+        self.client.force_login(self.user)
+        detail = reverse('api:performedset-detail', args=[logged.pk])
+        self.assertEqual(
+            self.client.patch(detail, {'reps': 1}, format='json').status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(self.client.delete(detail).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(PerformedSet.objects.filter(pk=logged.pk).exists())
+

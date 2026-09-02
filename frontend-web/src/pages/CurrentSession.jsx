@@ -17,25 +17,122 @@ function setSummary(set) {
   return weight === null ? `${set.reps} reps` : `${weight} × ${set.reps}`
 }
 
+/** One logged set: what it was, and the two ways to take it back.
+ *
+ * Buttons rather than a swipe (A8) — this runs on a desktop too — and small
+ * enough that the numbers to their left stay lined up down the list.
+ *
+ * Delete arms on the first tap and goes through on the second, so nothing
+ * mid-workout is one careless tap from gone. The armed state lives in `rows`
+ * rather than here, because tapping anything else has to disarm it.
+ */
+function SetRow({ set, number, scope, rows }) {
+  const row = `${scope}:${set.id}`
+  const armed = rows.armed === row
+  const failure = rows.failure?.row === row ? rows.failure.message : null
+
+  return (
+    <li className="set">
+      <span className="set-number">{number}</span>
+
+      {rows.open === row ? (
+        // Nested in the <li> so the row keeps its number and its place: this is
+        // the same set, being corrected, not a form standing in for it. The
+        // boxes are labelled for a screen reader only — a visible label per box
+        // would push the row onto a second line at phone width.
+        <form
+          className="edit-set"
+          onSubmit={(submitEvent) => {
+            submitEvent.preventDefault()
+            rows.save(row, set)
+          }}
+        >
+          <input
+            aria-label="Weight (kg)"
+            type="number"
+            inputMode="decimal"
+            step="any"
+            min="0"
+            // Clearing it makes the set a bodyweight one (A5), so it is never
+            // required here either.
+            placeholder="—"
+            value={rows.weight}
+            onChange={(event) => rows.setWeight(event.target.value)}
+          />
+          <input
+            aria-label="Reps"
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min="1"
+            value={rows.reps}
+            onChange={(event) => rows.setReps(event.target.value)}
+          />
+          <button className="set-action" type="submit" disabled={rows.entry === null || rows.busy}>
+            {rows.busy ? 'Saving…' : 'Save'}
+          </button>
+          <button className="set-action" type="button" onClick={rows.cancel} disabled={rows.busy}>
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <>
+          <span className="set-measures">{setSummary(set)}</span>
+          <span className="set-actions">
+            <button
+              className="set-action"
+              type="button"
+              onClick={() => rows.edit(row, set)}
+              disabled={rows.busy}
+            >
+              Edit
+            </button>
+            {/* Tabbing away is moving away too; the pointer half of it is in
+                the hook, which sees taps that land on nothing focusable. */}
+            <button
+              className="set-action"
+              data-armed={armed ? '' : undefined}
+              type="button"
+              onClick={() => rows.remove(row, set)}
+              onBlur={() => rows.disarm(row)}
+              disabled={rows.busy}
+            >
+              {armed ? 'Sure?' : 'Delete'}
+            </button>
+          </span>
+        </>
+      )}
+
+      {/* On the row that failed, which is still sitting there unchanged: a set
+          goes when the DELETE has gone through, not when it was asked for (A9). */}
+      {failure && (
+        <p className="status" data-state="error">
+          {failure}
+        </p>
+      )}
+    </li>
+  )
+}
+
 /** The sets logged into one exercise, numbered 1, 2, 3… by position.
  *
  * Both lists on this page come through here — the held exercise's own sets and
  * the whole workout below it. Same data, two renderings, one phrasing: a set
  * reads identically in both, and there is no second wording to drift from.
  *
+ * Numbering is position in the array and nothing else, so deleting set 2 of 4
+ * leaves 1, 2, 3 without anything having to renumber them.
+ *
  * `performed_sets` arrives in the order the sets were logged, so nothing is
  * sorted here. An exercise with none says so rather than leaving a gap.
  */
-function SetList({ sets }) {
+function SetList({ sets, scope, rows }) {
   if (sets.length === 0) return <p>No sets logged yet.</p>
 
   return (
     <ol className="sets">
       {sets.map((set, index) => (
-        <li className="set" key={set.id}>
-          <span className="set-number">{index + 1}</span>
-          <span className="set-measures">{setSummary(set)}</span>
-        </li>
+        <SetRow key={set.id} set={set} number={index + 1} scope={scope} rows={rows} />
       ))}
     </ol>
   )
@@ -59,20 +156,195 @@ function parseEntry(weight, reps) {
   return { weight_kg: typedWeight, reps: Number(reps) }
 }
 
+/** The session with one set's stored values swapped for the ones just saved. */
+function withSetReplaced(session, saved) {
+  return {
+    ...session,
+    performed_exercises: session.performed_exercises.map((performed) =>
+      performed.id === saved.performed_exercise
+        ? {
+            ...performed,
+            performed_sets: performed.performed_sets.map((candidate) =>
+              candidate.id === saved.id ? saved : candidate,
+            ),
+          }
+        : performed,
+    ),
+  }
+}
+
+/** The session without that set.
+ *
+ * Its `PerformedExercise` stays put even when it was the last set in it: the
+ * user deleted a set, not the movement, and deleting the parent behind their
+ * back would also throw away the block a later set would rejoin (A6). It keeps
+ * its heading and shows the empty line chunk 02.1 already renders.
+ */
+function withSetRemoved(session, removed) {
+  return {
+    ...session,
+    performed_exercises: session.performed_exercises.map((performed) =>
+      performed.id === removed.performed_exercise
+        ? {
+            ...performed,
+            performed_sets: performed.performed_sets.filter(
+              (candidate) => candidate.id !== removed.id,
+            ),
+          }
+        : performed,
+    ),
+  }
+}
+
+/** The one row open for editing and the one armed for deletion — at most one of
+ * each, across both lists.
+ *
+ * A set can be on screen twice at once: the held exercise's list and Completed
+ * exercises are the same sets rendered in two places. So a row is named by the
+ * list it is in as well as by its set — `held:<id>` — or opening Edit in one
+ * would open the same set in the other.
+ *
+ * Both writes go straight into `session` from the response and stop there
+ * (A9): `current/` is not re-read, and nothing changes on screen before the
+ * server has agreed to it.
+ */
+function useSetRows(setSession) {
+  // Which row, not which set: see above.
+  const [open, setOpen] = useState(null)
+  const [armed, setArmed] = useState(null)
+  // Kept as typed, like the log form's boxes, so a decimal point survives being
+  // typed and a cleared weight stays cleared.
+  const [weight, setWeight] = useState('')
+  const [reps, setReps] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState(null)
+
+  // The same rule as logging a set, from the same function: reps required and
+  // positive, a blank weight meaning bodyweight rather than zero (A5).
+  const entry = parseEntry(weight, reps)
+
+  // Acting elsewhere disarms a delete, and on a touch screen most of "elsewhere"
+  // is not focusable, so no blur reports it. While a row is armed, the next
+  // pointer down anywhere but that button puts the safety back on — including
+  // the second tap of a *different* row's Delete, which then only arms it.
+  useEffect(() => {
+    if (armed === null) return undefined
+
+    function disarmElsewhere(event) {
+      if (!event.target.closest?.('[data-armed]')) setArmed(null)
+    }
+    document.addEventListener('pointerdown', disarmElsewhere)
+    return () => document.removeEventListener('pointerdown', disarmElsewhere)
+  }, [armed])
+
+  /** Open a row, seeded with what is stored — closing whatever was open. */
+  function edit(row, set) {
+    setOpen(row)
+    // Through Number so a decimal column's "60.00" reads back as it was typed.
+    setWeight(set.weight_kg === null ? '' : String(Number(set.weight_kg)))
+    setReps(set.reps === null ? '' : String(set.reps))
+    setArmed(null)
+    setFailure(null)
+  }
+
+  /** Put the row back as it was. Nothing was sent, so there is nothing to undo. */
+  function cancel() {
+    setOpen(null)
+    setFailure(null)
+  }
+
+  async function save(row, set) {
+    if (entry === null || busy) return
+
+    setBusy(true)
+    setFailure(null)
+    try {
+      // Only the two fields this screen owns: a set's exercise is not editable
+      // here, and the columns chunk 03.5 leaves null (A4) stay untouched.
+      const saved = await api.patch(`performed-sets/${set.id}/`, entry)
+      setSession((current) => withSetReplaced(current, saved))
+      setOpen(null)
+    } catch (failed) {
+      console.error(failed)
+      // The row stays open with what was typed still in it, ready to retry.
+      setFailure({ row, message: 'Could not save that change. Please try again.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** First tap arms this row, second tap deletes it. */
+  async function remove(row, set) {
+    if (armed !== row) {
+      setArmed(row)
+      setFailure(null)
+      return
+    }
+    if (busy) return
+
+    setBusy(true)
+    setFailure(null)
+    try {
+      await api.delete(`performed-sets/${set.id}/`)
+      setSession((current) => withSetRemoved(current, set))
+      setArmed(null)
+    } catch (failed) {
+      console.error(failed)
+      setFailure({ row, message: 'Could not delete that set. Please try again.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function disarm(row) {
+    setArmed((current) => (current === row ? null : current))
+  }
+
+  /** Forget one list's rows, for when that list is about to go off screen.
+   *
+   * Nothing was sent, so nothing is lost — but a row left open or, worse, left
+   * armed would come back that way when the list does.
+   */
+  function close(scope) {
+    const inScope = (row) => row?.startsWith(`${scope}:`)
+    setOpen((current) => (inScope(current) ? null : current))
+    setArmed((current) => (inScope(current) ? null : current))
+    setFailure((current) => (inScope(current?.row) ? null : current))
+  }
+
+  return {
+    open,
+    armed,
+    weight,
+    setWeight,
+    reps,
+    setReps,
+    entry,
+    busy,
+    failure,
+    edit,
+    cancel,
+    save,
+    remove,
+    disarm,
+    close,
+  }
+}
+
 /** One exercise of the session, with the sets logged into it so far.
  *
  * The API returns exercises in the order they were first started, so they are
  * numbered by position and neither sorted nor grouped here. An exercise whose
  * sets have all been deleted (chunk 05) keeps its heading rather than vanishing.
  */
-function PerformedExercise({ performed, index }) {
+function PerformedExercise({ performed, index, rows }) {
   return (
     <li className="performed">
       <h3>
         {index}. {performed.exercise_name}
       </h3>
 
-      <SetList sets={performed.performed_sets} />
+      <SetList sets={performed.performed_sets} scope="completed" rows={rows} />
     </li>
   )
 }
@@ -130,6 +402,11 @@ export default function CurrentSession() {
 
   const [logging, setLogging] = useState(false)
   const [logError, setLogError] = useState(null)
+
+  // Correcting and removing sets, for every row on the page (chunk 05). It
+  // writes into the same `session` state as logging does, so a set fixed in one
+  // list is fixed in the other with nothing wired between them.
+  const rows = useSetRows(setSession)
 
   const [starting, setStarting] = useState(false)
   // <Status> speaks for the initial load, so a failed start needs its own line.
@@ -220,6 +497,9 @@ export default function CurrentSession() {
     setWeight('')
     setReps('')
     setLogError(null)
+    // Its list of sets goes with it; the same sets are still below, editable
+    // there, and every one of them is still stored.
+    rows.close('held')
   }
 
   return (
@@ -264,7 +544,7 @@ export default function CurrentSession() {
                 {/* Where the user is working, so the answer to "how many have I
                     done, and at what?" is here rather than in the section
                     below. */}
-                <SetList sets={heldSets} />
+                <SetList sets={heldSets} scope="held" rows={rows} />
 
                 <form className="log-set" onSubmit={logSet}>
                   <p>
@@ -382,7 +662,12 @@ export default function CurrentSession() {
             ) : (
               <ol className="performed-exercises">
                 {session.performed_exercises.map((performed, index) => (
-                  <PerformedExercise key={performed.id} performed={performed} index={index + 1} />
+                  <PerformedExercise
+                    key={performed.id}
+                    performed={performed}
+                    index={index + 1}
+                    rows={rows}
+                  />
                 ))}
               </ol>
             )}

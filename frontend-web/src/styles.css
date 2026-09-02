@@ -92,14 +92,53 @@ ol.sets .set {
     display: flex;
     align-items: center;
     gap: .75rem;
-    /* Tall enough to tap, and clear at its right-hand end: chunk 05 puts the
-       edit and delete controls there. */
+    /* Tall enough to tap, with the edit and delete controls at its right-hand
+       end. It wraps only for the two things that need a second line: a row open
+       for editing, and a failure message under the row it belongs to. */
+    flex-wrap: wrap;
     min-height: 2.75rem;
     box-sizing: border-box;
-    padding: .25rem 3.5rem .25rem 0;
+    padding: .25rem 0;
     border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
 ol.sets .set-number { min-width: 1.25rem; opacity: .7; }
+/* Wide enough that "8 reps" and "100 kg × 12" push the controls to the same
+   place, so they read as a column rather than following the text about. */
+ol.sets .set-measures { min-width: 7rem; }
+/* Out at the end of the row, whatever is to their left. */
+ol.sets .set-actions { margin-left: auto; display: flex; gap: .25rem; }
+/* Small and quiet: a row is for reading mid-workout, and these are for the
+   rare wrong entry. Text-sized, so two of them fit beside the numbers on a
+   375px screen without wrapping the row. */
+.set-action {
+    padding: .4rem .5rem;
+    /* Transparent rather than absent, so arming the delete below does not
+       resize the button and nudge the row. */
+    border: 1px solid transparent;
+    border-radius: .25rem;
+    font: inherit;
+    font-size: .85rem;
+    color: inherit;
+    background: none;
+    opacity: .7;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.set-action[disabled] { opacity: .3; text-decoration: none; cursor: default; }
+/* Armed, waiting for the second tap. Red and boxed, because it now does
+   something irreversible and should not look like the tap that armed it. */
+.set-action[data-armed] {
+    border-color: currentColor;
+    color: color-mix(in srgb, red 65%, currentColor);
+    opacity: 1;
+    text-decoration: none;
+}
+/* The row in place, as its own little form: same boxes as Log set, narrower,
+   so the corrected set stays where it was in the list. */
+.edit-set { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.edit-set input { font: inherit; padding: .3rem .4rem; width: 4.5rem; }
+/* A failure takes the whole of the second line, under the row it is about. */
+ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
 
 .record-set { margin-top: 1.5rem; }
 .record-set select { font: inherit; padding: .4rem .5rem; }
