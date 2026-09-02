@@ -213,16 +213,161 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
     min-height: 44px;
     padding: .5rem .75rem;
 }
-/* A held exercise is what the section is about, not a value sitting in a
-   widget, so it reads as a block with the movement's name at the top of it. */
+/* The zone: the same section, given the whole page (Z1), so it keeps that
+   section's width, alignment and controls and adds only what makes it a place
+   to be rather than a panel on one -- a header saying which movement, and the
+   one way out. Nothing is positioned, stacked or trapped: it is a page state,
+   and the page it replaced is simply not rendered. Ergonomics and the full
+   treatment are chunk 05. */
+.exercise-zone .zone-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .75rem;
+    /* A rule under the name, the way a screen has a top: it is what makes the
+       zone read as somewhere the user is rather than a panel on the session
+       page, and it costs no layer, no shadow and no colour of its own. */
+    margin-bottom: .75rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+/* The largest thing in the zone, because the screen is about it -- still under
+   the <h1> that names the tab. It wraps rather than pushing the way out off the
+   edge: catalogue names are user data and some of them are long. */
+.exercise-zone .zone-header h2 {
+    margin: 0;
+    min-width: 0;
+    font-size: 1.5rem;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+/* Thumb-sized, because it is the only way out and has to land -- and quiet,
+   because leaving is not an action on the workout. */
+.zone-close {
+    flex: none;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: inherit;
+    background: none;
+    opacity: .7;
+    cursor: pointer;
+}
+
+/* A held exercise is what the zone is about, and the zone's heading now says
+   which movement it is -- so the block itself is the form and the sets under
+   it, and no longer names the exercise a second time. */
 .held-exercise { margin-top: .5rem; }
-.held-exercise .held-name { font-size: 1.25rem; font-weight: 600; opacity: 1; margin-bottom: .5rem; }
 /* Under the form, not above it. The sets of the held exercise are the one list
    on this tab that grows *while the thumb is on the button* -- a set a minute,
    at 44px a row -- and above the boxes each one would walk Log set another row
    down the screen. Below them, the fifth set is logged from exactly where the
    first was. */
 .held-exercise .sets { margin: 0; }
+
+/* Last time beside this time. Enough for two columns to read as two columns and
+   for the headers to sit over them -- the same widths the rows already use, so
+   nothing here is a second layout. Fitting two sets of numbers *and* Edit and
+   Delete across 375px is the block further down. */
+/* Where the live workout stops and the record of it starts. Above this rule is
+   the one thing being done right now -- two boxes and the button that writes a
+   set; below it is what has been written, this session's beside last time's.
+   Mid-set that boundary has to be findable at a glance, so it is drawn heavier
+   than the 20% hairline the rows and the zone's header use: those separate one
+   row from the next inside a list, this separates writing from having written,
+   and at the same weight the eye reads the whole zone as one run of rows and
+   the boundary disappears. The space either side is doing as much work as the
+   rule -- it is what stops the form and the record reading as one block. */
+.last-time {
+    margin: 2rem 0 0;
+    padding-top: 1.5rem;
+    border-top: 2px solid color-mix(in srgb, currentColor 40%, transparent);
+}
+/* Quiet: loading and a first-ever go are both ordinary, and neither is worth
+   the weight of the numbers underneath. */
+.last-time-note { margin: 0 0 .5rem; font-size: .85rem; opacity: .7; }
+.paired-heads {
+    display: flex;
+    align-items: flex-end;
+    padding: .25rem 0;
+    font-size: .85rem;
+    opacity: .7;
+}
+/* An empty cell over the set numbers, so each header lands over its column. */
+.paired-heads .set-number { min-width: 1.25rem; }
+/* The date under the words, not beside them: the block is meaningless without
+   knowing when last time was, and it is a caption rather than a second header. */
+.paired-heads .set-last { display: flex; flex-direction: column; }
+
+/* Two columns of numbers, Edit and Delete, and 311px of phone to put them in.
+   The two measure cells divide the line between them -- no basis of their own
+   and the same floor -- so they come out the same width in every row and in the
+   header above them, and the columns hold their place when a row wraps. That
+   floor is also what makes the row wrap: at 6rem apiece the four cells are
+   wider than the screen, so `flex-wrap` drops Edit and Delete to a second line
+   rather than squeezing the numbers -- which is the trade this row was given
+   `flex-wrap` and a `min-height` for. Only below ~300px of screen does the
+   floor run out, and by then there is nothing left to give.
+   Scoped to the paired list: the same rows with no comparison beside them --
+   Completed exercises, and a movement being done for the first time -- keep the
+   single 7rem column they already had. */
+.paired-heads .set-last,
+.paired-heads .set-measures,
+ol.sets--paired .set-last,
+ol.sets--paired .set-measures {
+    box-sizing: border-box;
+    flex: 1 1 0;
+    min-width: 6rem;
+}
+/* Half a rem rather than three quarters, and the difference spent on the
+   numbers: two columns and a pair of controls do not otherwise reach a 320px
+   screen. */
+.paired-heads,
+ol.sets--paired .set { gap: .5rem; }
+/* The rule between them, so which column is which is a glance rather than a
+   read. A rule and not a colour: nothing in this comparison is better or
+   worse, and colour on this tab means something deletes. */
+.paired-heads .set-measures,
+ol.sets--paired .set-measures {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    padding-left: .5rem;
+    border-left: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+/* The header sits on the date's line rather than centred against it. */
+.paired-heads .set-measures { align-items: flex-end; }
+/* Last time is reference; this session is what is being written. Said with the
+   tab's existing idiom for quieter -- opacity -- rather than with a second
+   colour. Read-only, and it has to look it: no border, no underline, nothing
+   that invites the thumb. */
+ol.sets--paired .set-last { opacity: .7; }
+/* One workout ran a set further than the other. The dash is an absence, not a
+   value, and is not read at the weight of one. */
+ol.sets--paired [data-none] { opacity: .35; }
+
+/* The sessions before last time. Context behind the comparison, not a second
+   comparison: quieter than the paired list above it in the same way everything
+   subordinate on this tab is quiet -- smaller and dimmer through `opacity`,
+   never a colour of its own. */
+/* Left, said here rather than inherited: `main` centres, and a dated line
+   whose date does not start where the last one did is unreadable. */
+/* A step quieter again than last time's column above it: three tiers stepping
+   back in time, so a glance lands on now. */
+.earlier-sessions { margin-top: 1rem; font-size: .85rem; opacity: .55; text-align: left; }
+.earlier-sessions > h3 { margin: 0 0 .25rem; font-size: 1em; font-weight: 600; }
+.earlier-sessions ul { list-style: none; margin: 0; padding: 0; }
+/* One session per line: the date on the left, its sets run together after it,
+   wrapping under themselves rather than under the date if the line is too long
+   for the screen. Not a table and not rows -- these are for the corner of the
+   eye. */
+.earlier-sessions li { display: flex; gap: .75rem; padding: .15rem 0; }
+.earlier-sessions time { min-width: 3.5rem; flex: none; }
+
 /* The two boxes sit side by side with the button under them, so logging a set is
    one glance and one tap rather than a column to scroll through. */
 .log-set { margin: .75rem 0 1rem; }
@@ -313,8 +458,14 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
 .confirm-no[disabled] { opacity: .35; cursor: default; }
 
 /* End session: wide and at the bottom, a scroll clear of Log set. It keeps the
-   workout, so it is never red. */
-.end-session { margin-top: 3rem; }
+   workout, so it is never red -- which is also why it must not be mistaken for
+   Record new exercise, the other full-width button on this page. Those two are
+   told apart by where they are, so the distance between them is what does it:
+   a screenful of workout between the way in and the way out, not a gap. A
+   fraction of the screen rather than a fixed measure, because what has to fit
+   between them is a viewport; 3rem is the floor, for a window too short for the
+   fraction to mean anything. */
+.end-session { margin-top: max(3rem, 30vh); }
 .end-session .button { margin-top: 0; }
 
 /* The line above the form on a session left running overnight. Quiet, because

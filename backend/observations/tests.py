@@ -1,8 +1,12 @@
+import uuid
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -330,3 +334,183 @@ class PerformedSetAPITests(APITestCase):
         self.assertEqual(self.client.delete(detail).status_code, status.HTTP_404_NOT_FOUND)
         self.assertTrue(PerformedSet.objects.filter(pk=logged.pk).exists())
 
+
+
+class PerformedExerciseHistoryTests(APITestCase):
+    """`history/` — the last few times this user trained one movement."""
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.user = User.objects.create_user('lifter', password='pw')
+        cls.other = User.objects.create_user('stranger', password='pw')
+
+        cls.squat = ExerciseDefinition.objects.create(name='Squat')
+        cls.bench = ExerciseDefinition.objects.create(name='Bench press')
+
+        cls.url = reverse('api:performedexercise-history')
+
+    @staticmethod
+    def train(user, exercise, days_ago):
+        """One finished session on a given day, with the movement performed in it."""
+        trained_at = timezone.now() - timedelta(days=days_ago)
+        session = TrainingSession.objects.create(
+            user=user,
+            started_at=trained_at,
+            ended_at=trained_at + timedelta(hours=1),
+        )
+        return PerformedExercise.objects.create(
+            training_session=session, exercise_definition=exercise
+        )
+
+    def history(self, **params):
+        params.setdefault('exercise_definition', str(self.squat.pk))
+        return self.client.get(self.url, params)
+
+    def test_anonymous_request_is_rejected(self):
+        response = self.history()
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_another_users_identical_training_is_invisible(self):
+        """Same movement, same day, different lifter."""
+        self.train(self.other, self.squat, days_ago=1)
+        mine = self.train(self.user, self.squat, days_ago=1)
+
+        self.client.force_login(self.user)
+        response = self.history()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([e['id'] for e in response.data], [str(mine.pk)])
+
+    def test_newest_first_by_when_it_was_trained(self):
+        """A backdated session sorts by started_at, not by when it was typed."""
+        # Written newest-trained first, so created_at runs the other way.
+        newest = self.train(self.user, self.squat, days_ago=1)
+        middle = self.train(self.user, self.squat, days_ago=8)
+        oldest = self.train(self.user, self.squat, days_ago=30)
+        self.assertLess(newest.created_at, oldest.created_at)
+
+        self.client.force_login(self.user)
+        response = self.history()
+        self.assertEqual(
+            [e['id'] for e in response.data],
+            [str(newest.pk), str(middle.pk), str(oldest.pk)],
+        )
+
+    def test_only_the_asked_for_movement_comes_back(self):
+        squatted = self.train(self.user, self.squat, days_ago=1)
+        self.train(self.user, self.bench, days_ago=1)
+
+        self.client.force_login(self.user)
+        response = self.history()
+        self.assertEqual([e['id'] for e in response.data], [str(squatted.pk)])
+
+    def test_exclude_session_drops_that_session_only(self):
+        running = self.train(self.user, self.squat, days_ago=0)
+        earlier = self.train(self.user, self.squat, days_ago=7)
+
+        self.client.force_login(self.user)
+        response = self.history(exclude_session=str(running.training_session_id))
+        self.assertEqual([e['id'] for e in response.data], [str(earlier.pk)])
+
+    def test_three_sessions_by_default(self):
+        for days_ago in (1, 8, 15, 22, 29):
+            self.train(self.user, self.squat, days_ago=days_ago)
+
+        self.client.force_login(self.user)
+        self.assertEqual(len(self.history().data), 3)
+
+    def test_limit_caps_the_count(self):
+        for days_ago in (1, 8, 15, 22):
+            self.train(self.user, self.squat, days_ago=days_ago)
+
+        self.client.force_login(self.user)
+        self.assertEqual(len(self.history(limit=1).data), 1)
+        self.assertEqual(len(self.history(limit=4).data), 4)
+
+    def test_a_limit_above_the_cap_is_clamped_not_refused(self):
+        self.train(self.user, self.squat, days_ago=1)
+
+        self.client.force_login(self.user)
+        response = self.history(limit=500)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+    def test_a_nonsense_limit_is_rejected(self):
+        self.client.force_login(self.user)
+        for limit in ('lots', '0', '-3'):
+            with self.subTest(limit=limit):
+                response = self.history(limit=limit)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_sets_come_back_nested_in_performed_order(self):
+        performed = self.train(self.user, self.squat, days_ago=1)
+        PerformedSet.objects.create(performed_exercise=performed, weight_kg='60.00', reps=8)
+        PerformedSet.objects.create(performed_exercise=performed, weight_kg='70.00', reps=5)
+
+        self.client.force_login(self.user)
+        sets = self.history().data[0]['performed_sets']
+        self.assertEqual(
+            [(s['weight_kg'], s['reps']) for s in sets],
+            [('60.00', 8), ('70.00', 5)],
+        )
+
+    def test_each_block_carries_the_date_it_was_trained(self):
+        performed = self.train(self.user, self.squat, days_ago=1)
+
+        self.client.force_login(self.user)
+        row = self.history().data[0]
+        self.assertEqual(
+            parse_datetime(row['training_session_started_at']),
+            performed.training_session.started_at,
+        )
+
+    def test_the_answer_is_a_bare_array_not_a_page(self):
+        self.train(self.user, self.squat, days_ago=1)
+
+        self.client.force_login(self.user)
+        response = self.history()
+        self.assertIsInstance(response.data, list)
+
+    def test_a_never_trained_movement_is_an_empty_list(self):
+        """Never having done it is an answer, not a missing resource."""
+        self.client.force_login(self.user)
+        response = self.history(exercise_definition=str(self.bench.pk))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    def test_an_unknown_exercise_id_is_an_empty_list(self):
+        self.client.force_login(self.user)
+        response = self.history(exercise_definition=str(uuid.uuid4()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    def test_the_movement_is_required(self):
+        self.client.force_login(self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('detail', response.data)
+
+    def test_a_malformed_uuid_is_a_400_not_a_500(self):
+        """Filtering a UUIDField on garbage would otherwise raise, and DRF 500s."""
+        self.client.force_login(self.user)
+        self.assertEqual(
+            self.history(exercise_definition='not-a-uuid').status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(
+            self.history(exclude_session='not-a-uuid').status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_the_query_count_does_not_grow_with_the_rows(self):
+        """select_related + a prefetch, so more history is not more queries."""
+        for days_ago in (1, 8, 15):
+            performed = self.train(self.user, self.squat, days_ago=days_ago)
+            PerformedSet.objects.create(performed_exercise=performed, reps=5)
+
+        self.client.force_login(self.user)
+        with CaptureQueriesContext(connection) as one_row:
+            self.assertEqual(len(self.history(limit=1).data), 1)
+        with CaptureQueriesContext(connection) as three_rows:
+            self.assertEqual(len(self.history().data), 3)
+        self.assertEqual(len(three_rows), len(one_row))

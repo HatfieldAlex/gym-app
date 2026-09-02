@@ -73,6 +73,24 @@ class PerformedExerciseDetailSerializer(PerformedExerciseSerializer):
         fields = PerformedExerciseSerializer.Meta.fields + ['performed_sets']
 
 
+class PerformedExerciseHistorySerializer(PerformedExerciseDetailSerializer):
+    """One past performance of a movement, dated by when it was trained.
+
+    The zone shows a block per past session and has only the performed exercise
+    to label it with, so the session's `started_at` rides along. Nesting the
+    whole session would carry fields this screen has no use for.
+    """
+
+    training_session_started_at = serializers.DateTimeField(
+        source='training_session.started_at', read_only=True
+    )
+
+    class Meta(PerformedExerciseDetailSerializer.Meta):
+        fields = PerformedExerciseDetailSerializer.Meta.fields + [
+            'training_session_started_at'
+        ]
+
+
 class TrainingSessionSerializer(serializers.ModelSerializer):
     """A session with its exercises nested in performed order.
 
