@@ -9,6 +9,8 @@ single object store:
     ├── .git                       one line: `gitdir: ./.bare`
     ├── wt.sh                      the directory switcher, see below
     ├── README.md                  symlink to this file
+    ├── iteration-flow.md          how a round of work gets done, idea to merge
+    ├── CLAUDE.md                  what an agent reads first; points at the above
     ├── main/                      worktree, branch `main`
     ├── deployment/                worktree, branch `deployment`
     ├── enhance-current-exercise/  worktree, branch `enhance-current-exercise`
