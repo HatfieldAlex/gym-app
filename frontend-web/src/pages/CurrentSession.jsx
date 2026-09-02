@@ -1,8 +1,19 @@
 import { useEffect, useState } from 'react'
 
 import { api } from '../api.js'
+import AddExerciseForm, { insertByName } from '../components/AddExerciseForm.jsx'
 import Status from '../components/Status.jsx'
 import { useDocumentTitle, useLoad } from '../hooks.js'
+
+/** The dropdown's last option: not an exercise, but the way to add one.
+ *
+ * A sentinel rather than an id, and one that no catalogue row can collide with:
+ * every other value in that <select> is a UUID. It is read and thrown away by
+ * the change handler — it must never reach `heldId`, where a value that matches
+ * no catalogue entry would leave `held` null and the section showing the
+ * dropdown again with nothing to explain why.
+ */
+const ADD_NEW = 'new'
 
 /** One set as a single line: "60 kg × 8", or "8 reps" when it carried no weight.
  *
@@ -392,9 +403,11 @@ export default function CurrentSession() {
   // answer to the question, not a failure to answer it.
   const { state, data, error } = useLoad(() => api.get('training-sessions/current/'))
 
-  // Read-only reference data, already ordered by name: fetched once and used as
-  // it arrives.
-  const { state: catalogueState, data: exercises } = useLoad(() => api.list('exercises/'))
+  // Reference data, already ordered by name, fetched once. Read-only until this
+  // page grew a way to add to it (04), which is why the load feeds page state
+  // rather than being rendered straight: a movement added mid-session has to
+  // land somewhere, and it lands here.
+  const { state: catalogueState, data: catalogueData } = useLoad(() => api.list('exercises/'))
 
   // The loaded session becomes the page's own state: what gets logged into it
   // from here on is known to this page before it is re-read from the API.
@@ -403,12 +416,30 @@ export default function CurrentSession() {
     if (state === 'ready') setSession(data)
   }, [state, data])
 
+  // The same move, for the same reason: the loaded catalogue becomes the page's
+  // own list, so an exercise added from the dropdown below is in it from then on
+  // without `exercises/` being read again (N11).
+  const [catalogue, setCatalogue] = useState(null)
+  useEffect(() => {
+    if (catalogueState === 'ready') setCatalogue(catalogueData)
+  }, [catalogueState, catalogueData])
+
   // The exercise being recorded into, by catalogue id — a UUID string, so it is
   // kept exactly as it arrived. Holding one is a client-side act (A10): nothing
   // is written until its first set (03.5), so a refresh comes back to the
   // dropdown with everything already logged still logged.
   const [heldId, setHeldId] = useState(null)
-  const held = exercises?.find((exercise) => exercise.id === heldId) ?? null
+  const held = catalogue?.find((exercise) => exercise.id === heldId) ?? null
+
+  // Whether the dropdown has been swapped for the add form. One of three states
+  // this section is in — dropdown, adding, holding — and never two at once, so
+  // it is only ever read where nothing is held.
+  const [adding, setAdding] = useState(false)
+
+  // The name of the movement a typed one turned out to already be, for the
+  // quiet line under it while it is held (N5). It belongs to this hold: it is
+  // dropped with the exercise, in `releaseExercise`.
+  const [alreadyThere, setAlreadyThere] = useState(null)
 
   // What has already been done to the held exercise in this session, read off
   // the same `session` state the list below reads — not a second copy of it.
@@ -507,6 +538,44 @@ export default function CurrentSession() {
     }
   }
 
+  /** Adding a movement is choosing it: the section goes straight to recording.
+   *
+   * This is the whole point of the chunk (N10). The created row goes into the
+   * page's copy of the catalogue — so it is in the dropdown for the rest of the
+   * session, with no second GET (N11) — and is held on the spot, which lands the
+   * section in exactly the state choosing anything else from the list lands it
+   * in: the name, an empty set list, the weight and reps boxes.
+   *
+   * Nothing is written to the session. A hold is client-side (A10): the first
+   * set is still what creates the `PerformedExercise`, so a movement added and
+   * then thought better of leaves the workout exactly as it was.
+   */
+  function holdCreated(created) {
+    setCatalogue((list) => insertByName(list, created))
+    setHeldId(created.id)
+    setAdding(false)
+  }
+
+  /** The name was already a movement, so that movement is the answer (N5).
+   *
+   * It is put into the list first if it is not in it — which happens when this
+   * page loaded before somebody else added it. The catalogue *page* deliberately
+   * does the opposite, because there the list is a table being read and a
+   * missing row is a stale read that a reload fixes. Here the list is what
+   * `held` is looked up in, so an entry about to be recorded has to be in it or
+   * the section cannot show the movement it is recording.
+   */
+  function holdExisting(existing) {
+    setCatalogue((list) =>
+      list.some((entry) => entry.id === existing.id) ? list : insertByName(list, existing),
+    )
+    // Said quietly under the name, not as an error: what matters mid-workout is
+    // that recording has started against the movement they meant.
+    setAlreadyThere(existing.name)
+    setHeldId(existing.id)
+    setAdding(false)
+  }
+
   /** Let go of the exercise, and of what was being typed into it.
    *
    * Both ways out of a hold end here — Change exercise backing out of a mis-tap
@@ -525,6 +594,11 @@ export default function CurrentSession() {
     setWeight('')
     setReps('')
     setLogError(null)
+    // Both belong to the movement being let go: the note is about the name that
+    // held it, and a half-typed add form must not be what Change exercise
+    // returns to.
+    setAlreadyThere(null)
+    setAdding(false)
     // Its list of sets goes with it; the same sets are still below, editable
     // there, and every one of them is still stored.
     rows.close('held')
@@ -696,6 +770,13 @@ export default function CurrentSession() {
                 {/* React escapes it for us: catalogue names are user data. */}
                 <p className="held-name">Recording {held.name}</p>
 
+                {/* Only after a typed name turned out to exist already, and only
+                    for as long as this movement is held. Neutral: nothing went
+                    wrong, and the useful news is above it. */}
+                {alreadyThere && (
+                  <p className="status">{alreadyThere} was already in the catalogue.</p>
+                )}
+
                 <form className="log-set" onSubmit={logSet}>
                   <p>
                     <label htmlFor="set-weight">Weight (kg)</label>
@@ -789,20 +870,44 @@ export default function CurrentSession() {
                     the same place as the first. */}
                 <SetList sets={heldSets} scope="held" rows={rows} />
               </div>
+            ) : adding ? (
+              /* In place of the dropdown, not beside it: the section shows one
+                 of its three states at a time. The form is the component the
+                 catalogue page uses — the box, the request and the failures are
+                 all its own — with the three props this page needs. Cancel is
+                 the way back out of a mis-tap, the same job Change exercise does
+                 one state along. */
+              <AddExerciseForm
+                onAdded={holdCreated}
+                onDuplicate={holdExisting}
+                onCancel={() => setAdding(false)}
+              />
             ) : (
               <>
                 <select
                   aria-label="Exercise"
                   value=""
                   disabled={catalogueState !== 'ready'}
-                  onChange={(event) => setHeldId(event.target.value)}
+                  onChange={(event) => {
+                    const chosen = event.target.value
+                    // The sentinel opens the form and goes no further: `heldId`
+                    // holds catalogue ids and nothing else.
+                    if (chosen === ADD_NEW) setAdding(true)
+                    else setHeldId(chosen)
+                  }}
                 >
                   <option value="">Choose an exercise</option>
-                  {exercises?.map((exercise) => (
+                  {catalogue?.map((exercise) => (
                     <option key={exercise.id} value={exercise.id}>
                       {exercise.name}
                     </option>
                   ))}
+                  {/* Last, after the movements, and inside the <select>: this is
+                      where the user is standing when they find the list has no
+                      name for what they are about to do. It rides the dropdown's
+                      disabled state too, so a catalogue that would not load
+                      offers no way to add blind to it. */}
+                  <option value={ADD_NEW}>+ Add a new exercise…</option>
                 </select>
                 {/* <Status> above speaks for the session, so a catalogue that
                     will not load says so here rather than looking like one. */}

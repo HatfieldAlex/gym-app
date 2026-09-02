@@ -21,9 +21,14 @@ since DBML has no way to express it.
 // ==========================================================================
 
 Table catalog_exercisedefinition {
-  id         uuid         [pk, note: 'default set in Python: uuid.uuid4()']
-  name       varchar(120) [not null, unique]
-  created_at timestamptz  [not null, note: 'set to now() on insert (auto_now_add)']
+  id            uuid         [pk, note: 'default set in Python: uuid.uuid4()']
+  name          varchar(120) [not null, unique]
+  created_by_id integer      [null, ref: > auth_user.id, note: 'on_delete=SET_NULL; who first added this movement; null for the seeded and admin-created rows']
+  created_at    timestamptz  [not null, note: 'set to now() on insert (auto_now_add)']
+
+  indexes {
+    created_by_id [note: 'implicit: Django indexes every ForeignKey column']
+  }
 
   Note: 'The exercise catalogue: one row per movement, referenced by PerformedExercise.'
 }

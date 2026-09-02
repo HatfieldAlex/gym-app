@@ -54,6 +54,69 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .catalogue td { padding: .4rem .9rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
 .catalogue th { font-weight: 600; }
 
+/* Add an exercise */
+/* Two blocks, because the form is shared: `.add-exercise` is the section the
+   catalogue page wraps it in, `.add-exercise-form` is the component itself and
+   travels with it wherever it is rendered. The size of the thing is the
+   section's business and not the component's -- the same box and the same
+   button are an ordinary page form here and a thumb-sized one inside a running
+   session, which is a difference between two places to stand rather than two
+   forms. */
+.add-exercise { margin-top: 1.5rem; }
+.add-exercise h2 { margin: 0 0 .75rem; font-size: 1.15rem; }
+/* A page form, not a banner. `main` is shrink-to-fit, so this column is as wide
+   as the widest thing in it -- the table below, on a desktop with long names --
+   and without a cap the box would stretch to match a list it has nothing to do
+   with. Wide enough for a real movement name and no wider. */
+.add-exercise .add-exercise-form { max-width: 28rem; margin-inline: auto; }
+/* The line that says what landed, quieter than the row it points at. Directly
+   under the form, the same step below it as the form's own failure line, so all
+   three answers -- added, already there, did not go through -- land in one spot
+   under the button that was just tapped instead of one each. */
+.add-exercise-added { margin-top: .75rem; }
+
+/* The box and the button on one line -- a name and a tap -- wrapping instead of
+   squeezing the box below the width of a movement's name. Wrapping rather than
+   a media query: what decides is the room this form was given, which is not the
+   width of the screen on either of the two pages it stands on. */
+.add-exercise-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: center;
+    gap: .75rem;
+}
+/* The box takes the line's slack, so it is as wide as the room allows and the
+   button keeps its place at the end of it. 15rem is roughly where a real name
+   stops fitting -- `Romanian deadlift (single leg)` is 30 characters -- and it
+   is the point the line breaks at: below it the button drops to the next line
+   rather than the box shrinking under a name. */
+.add-exercise-form .add-exercise-field { flex: 1 1 15rem; margin: 0; display: inline-grid; gap: .25rem; text-align: left; }
+.add-exercise-form label { font-size: .85rem; opacity: .7; }
+.add-exercise-form input {
+    font: inherit;
+    /* 16px or more, or iOS Safari zooms the page in on focus. */
+    font-size: 1rem;
+    box-sizing: border-box;
+    padding: .5rem .6rem;
+    /* All of whatever the field was given: the cap is the section's, above, so
+       the box is full width on a phone without stretching on a desktop. */
+    width: 100%;
+}
+.add-exercise-form .button { margin-top: 0; }
+/* Cancel is the quiet one of the pair, and never a warning: it throws nothing
+   away, and nothing in this feature deletes anything (N2). Same outlined,
+   unfilled weight as Change exercise, which is the same offer one state along.
+   Named by type rather than a class of its own because Add is the submit and
+   Cancel is the only other button the form has. */
+.add-exercise-form .button[type="button"] {
+    border-color: color-mix(in srgb, currentColor 45%, transparent);
+    opacity: .8;
+}
+.add-exercise-form .button[type="button"][disabled] { opacity: .35; }
+/* A failure takes the whole of the next line, under the button it is about. */
+.add-exercise-form .status { flex-basis: 100%; margin: 0; }
+
 /* Exercise detail */
 .meta { margin-top: .5rem; }
 .back { display: inline-block; margin-top: 1.5rem; }
@@ -213,9 +276,25 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
     min-height: 44px;
     padding: .5rem .75rem;
 }
+/* Standing where the dropdown stood, so it lines up with the rest of the
+   section: the form centres itself on the catalogue page, where it is the whole
+   of what is on screen, and this column is read down its left edge. Placement
+   only -- the form's own styling travels with the component. */
+.record-set .add-exercise-form { justify-content: flex-start; margin-top: .5rem; }
+/* Thumb-sized here and only here: this is the form being used one-handed with
+   sweaty hands mid-set, so Add is the 44px of Log set with room either side of
+   the word, and the box is the same height as it and as the dropdown it is
+   standing in place of. The catalogue page leaves both at the ordinary
+   `.button` size -- it is read sitting down. */
+.record-set .add-exercise-form input { min-height: 44px; padding: .5rem .75rem; }
+.record-set .add-exercise-form .button { min-height: 44px; padding: .75rem 1.5rem; }
+
 /* A held exercise is what the section is about, not a value sitting in a
    widget, so it reads as a block with the movement's name at the top of it. */
 .held-exercise { margin-top: .5rem; }
+/* The note about a name that already existed, directly under the name it is
+   about rather than a paragraph away from it. */
+.held-exercise > .status { margin: 0 0 .5rem; }
 .held-exercise .held-name { font-size: 1.25rem; font-weight: 600; opacity: 1; margin-bottom: .5rem; }
 /* Under the form, not above it. The sets of the held exercise are the one list
    on this tab that grows *while the thumb is on the button* -- a set a minute,
