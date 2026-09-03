@@ -4,6 +4,38 @@ from rest_framework import serializers
 from .models import PerformedExercise, PerformedSet, TrainingSession
 
 
+EXERCISE_IS_CLOSED = 'That exercise has been logged and cannot be changed.'
+SESSION_IS_CLOSED = 'That session has ended and cannot be changed.'
+
+
+def closed_reason(performed_exercise=None, training_session=None):
+    """Why this row may not be written to, or `None` when it may.
+
+    The one definition of writable (E6): a row is writable only while its
+    performed exercise is open **and** its session is open. Both halves are
+    checked every time, from here, so there is one rule rather than four that
+    drift. `views.py` imports it for the update and delete paths; the create
+    paths call it below, beside the ownership re-check they already do.
+
+    The session half is not redundant. Under E4 a live session cannot be closed
+    over an open exercise, so nothing this app does can produce an open exercise
+    in a closed session -- but rows written before this iteration, and anything
+    done in the admin, can be in exactly that state, and a rule that has to be
+    reasoned about before it can be trusted is not the rule.
+
+    Two messages, because a closed exercise and a closed session are two
+    different things for the reader to do something about.
+    """
+    if performed_exercise is not None:
+        if performed_exercise.ended_at is not None:
+            return EXERCISE_IS_CLOSED
+        if training_session is None:
+            training_session = performed_exercise.training_session
+    if training_session is not None and training_session.ended_at is not None:
+        return SESSION_IS_CLOSED
+    return None
+
+
 class OwnedRelationMixin:
     """Reject writes that point a row at another user's data.
 
@@ -18,10 +50,23 @@ class OwnedRelationMixin:
             return value
         raise serializers.ValidationError('Not found.')
 
+    def _require_open(self, **target):
+        """Refuse a create that would write into something already closed (E6).
+
+        A field error, the way an unowned target already is, and only ever
+        reached once ownership has answered: another user's closed row is a
+        404 or a `Not found.`, never a hint that it exists and is finished.
+        """
+        reason = closed_reason(**target)
+        if reason is not None:
+            raise serializers.ValidationError(reason)
+
 
 class PerformedSetSerializer(OwnedRelationMixin, serializers.ModelSerializer):
     def validate_performed_exercise(self, value):
-        return self._require_own(value, 'training_session__user')
+        value = self._require_own(value, 'training_session__user')
+        self._require_open(performed_exercise=value)
+        return value
 
     class Meta:
         model = PerformedSet
@@ -45,7 +90,9 @@ class PerformedExerciseSerializer(OwnedRelationMixin, serializers.ModelSerialize
     exercise_name = serializers.CharField(source='exercise_definition.name', read_only=True)
 
     def validate_training_session(self, value):
-        return self._require_own(value, 'user')
+        value = self._require_own(value, 'user')
+        self._require_open(training_session=value)
+        return value
 
     class Meta:
         model = PerformedExercise
@@ -56,8 +103,12 @@ class PerformedExerciseSerializer(OwnedRelationMixin, serializers.ModelSerialize
             'exercise_name',
             'exercise_prescription',
             'created_at',
+            'ended_at',
         ]
-        read_only_fields = ['id', 'created_at']
+        # `ended_at` is read-only throughout, unlike the session's: there is no
+        # retrospective-entry path for an exercise, so end/ is the only thing
+        # that stamps it.
+        read_only_fields = ['id', 'created_at', 'ended_at']
 
 
 class PerformedExerciseDetailSerializer(PerformedExerciseSerializer):

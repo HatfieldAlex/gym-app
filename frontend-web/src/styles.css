@@ -192,11 +192,22 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .completed-exercises > h2 { margin: 0 0 .75rem; font-size: 1.35rem; }
 
 .completed-exercises { margin-top: 2rem; }
-/* Full width here, unlike on the detail page it is shared with, so every row's
-   Edit and Delete land at the same right-hand edge as the held exercise's --
-   one column of controls down the page rather than one per block. */
+/* Full width here, unlike on the detail page it is shared with, so the rule
+   under each set runs the width of the section and the blocks read as one log
+   down the page rather than as a column that changes width per movement. */
 .completed-exercises .performed-exercises { display: block; margin-top: 0; }
 .completed-exercises .performed h3 { margin: 0 0 .25rem; font-size: 1.1rem; }
+/* A record, and only that: chunk 04 took Edit and Delete off every set down
+   here, because everything in this list is closed and the API refuses every
+   write to it (E6). So the row is no longer a target -- nothing to hit, and
+   nothing to keep 44px of thumb clear for -- and the measure no longer has to
+   hold a 7rem column open to line the controls up at a right-hand edge that
+   has nothing on it. What is left is a number and a measure, at the density of
+   something read rather than tapped, which is also a screenful less scrolling
+   by the seventh movement of a workout. The zone's own list, where the two
+   still are, keeps every bit of its size. */
+.completed-exercises ol.sets .set { min-height: 0; padding: .3rem 0; }
+.completed-exercises ol.sets .set-measures { min-width: 0; }
 /* Scoped to the list, not to the section: the held exercise renders the same
    rows above, from the same component. The detail page's `.sets` is a table, so
    these rules name the element they are for. */
@@ -277,6 +288,13 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
     min-height: 44px;
     padding: .5rem .75rem;
 }
+/* Off while the movement it just took is being opened (E2, A9), and it has to
+   look off: the round trip is short, and a dropdown that still reads as live
+   invites the second pick nobody asked for. The tab's own idiom for a control
+   that is not taking taps -- the opacity `.button[disabled]` uses -- rather
+   than the browser's own grey, which under `color-scheme: light dark` is
+   barely a change at all on a dark screen. */
+.record-set select[disabled] { opacity: .5; cursor: default; }
 /* Standing where the dropdown stood, so it lines up with the rest of the
    section: the form centres itself on the catalogue page, where it is the whole
    of what is on screen, and this column is read down its left edge. Placement
@@ -296,11 +314,11 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
    one way out. Nothing is positioned, stacked or trapped: it is a page state,
    and the page it replaced is simply not rendered. Ergonomics and the full
    treatment are chunk 05. */
+/* A heading and a rule, which is the whole of it now. It was a flex row with
+   the name at one end and the × at the other; the × is gone (02), so the row
+   is gone with it -- an ordinary block, with no line of layout left over
+   holding a space open for something that is not there. */
 .exercise-zone .zone-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: .75rem;
     /* A rule under the name, the way a screen has a top: it is what makes the
        zone read as somewhere the user is rather than a panel on the session
        page, and it costs no layer, no shadow and no colour of its own. */
@@ -309,31 +327,17 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
     border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
 /* The largest thing in the zone, because the screen is about it -- still under
-   the <h1> that names the tab. It wraps rather than pushing the way out off the
-   edge: catalogue names are user data and some of them are long. */
+   the <h1> that names the tab. It breaks mid-word rather than running off the
+   side: catalogue names are user data and some of them are long. */
 .exercise-zone .zone-header h2 {
     margin: 0;
-    min-width: 0;
     font-size: 1.5rem;
     line-height: 1.2;
     overflow-wrap: anywhere;
 }
-/* Thumb-sized, because it is the only way out and has to land -- and quiet,
-   because leaving is not an action on the workout. */
-.zone-close {
-    flex: none;
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0;
-    border: 0;
-    font: inherit;
-    font-size: 1.5rem;
-    line-height: 1;
-    color: inherit;
-    background: none;
-    opacity: .7;
-    cursor: pointer;
-}
+/* The header's × is gone: leaving an exercise is a request now, and the one
+   control that makes it stands at the bottom of the zone saying which act it
+   is. Nothing replaces it up here, so nothing is styled here either. */
 
 /* A held exercise is what the zone is about, and the zone's heading now says
    which movement it is -- so the block itself is the form and the sets under
@@ -465,10 +469,58 @@ ol.sets--paired [data-none] { opacity: .35; }
     width: 7.5rem;
 }
 .log-set .status { margin: .5rem 0 0; }
-/* Wraps, because three buttons do not fit across 375px: Log set and Log
-   exercise share the first line, in that order, and Change exercise takes the
-   second when there is no room for it. */
-.log-set-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }
+/* A restored draft (E10). Z6's objection was never a filled box; it was that a
+   number the user did not type fails *silently*. So it does not: the two boxes
+   come back marked and a line under them says why.
+   Dashed, and on a ground of its own: a fresh box is a hairline rectangle of
+   nothing, so an edge that is drawn in strokes and a panel the eye can see are
+   both different from it at a glance and at arm's length, and neither is a
+   colour. Dashed rather than heavier because the number in it is provisional --
+   typed, not yet logged -- and the mark goes the moment it is either. Nothing
+   has gone wrong here, so nothing shouts: this is well under the strength of
+   `[data-state="error"]`, which is the only thing on the tab drawn in red, and
+   it is the same "marked by an edge and a ground" the armed Delete and the
+   chosen feedback pill are drawn with. */
+.log-set input[data-restored] {
+    border: 2px dashed color-mix(in srgb, currentColor 60%, transparent);
+    background: color-mix(in srgb, currentColor 14%, transparent);
+}
+/* The other half of it, on its own line under the boxes rather than as the
+   third inline-grid column beside them that `.log-set p` would otherwise make
+   of it. Quiet: `.status` register, and a step smaller again, the size the
+   tab's other captions are.
+   Two things it must not do. It must not widen the zone: the section is
+   shrink-to-fit between an 18rem floor and the screen, and a sentence this
+   long would otherwise be the widest thing in it and set that width, so the
+   zone would grow by a couple of rem the moment a draft came back. `width: 0`
+   keeps it out of that calculation and `min-width: 100%` gives it the line
+   back afterwards. And it must not move Log set: the line goes on the first
+   keystroke (06), so the band it sits in is a fixed two lines -- what the
+   sentence takes across a zone this wide, which is the width the zone is at
+   any screen size -- and the rule below keeps that same band open when there
+   is no line in it. */
+.log-set .restored-note {
+    display: block;
+    box-sizing: border-box;
+    width: 0;
+    min-width: 100%;
+    min-height: 2.3rem;
+    margin: 0;
+    font-size: .85rem;
+    line-height: 1.35;
+}
+/* Two buttons, not three: Log set, and whichever of Log exercise and Change
+   exercise the block is up to (02). They fit across a phone with room to
+   spare, and `flex-wrap` is what is left of the old three-button row -- the
+   floor below which the pair drops to two lines rather than squeezing, which
+   is under 320px of screen.
+   The margin is the band kept for the restored line above (E10) -- the same
+   two lines it is given, to the pixel -- so Log set stands in one place
+   whether a draft came back or not, and does not walk up under the thumb when
+   the first keystroke clears the line. When the line is there it fills the
+   band instead. */
+.log-set-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin-top: 2.3rem; }
+.log-set .restored-note + .log-set-actions { margin-top: 0; }
 /* The tap of the workout, and the third-largest thing on the page after Start
    and End: directly under the two boxes it reads from, within reach of the
    thumb that just finished typing into them. */
@@ -508,6 +560,11 @@ ol.sets--paired [data-none] { opacity: .35; }
     cursor: pointer;
 }
 .change-exercise[disabled] { opacity: .35; cursor: default; }
+/* Cancel, in the chooser: the same treatment, because it is the same kind of
+   thing one state earlier -- "not this, take me back", writing nothing. It sits
+   below the dropdown rather than beside it, so it needs the gap the button row
+   above gets from the boxes it follows. */
+.zone-actions { margin-top: .75rem; }
 
 /* The two ways out of a session, and the confirmation they share. Both replace
    their button in place, so the second tap lands where the first one did and

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Navigate, useMatch, useNavigate } from 'react-router-dom'
 
 import { api } from '../api.js'
 import AddExerciseForm, { insertByName } from '../components/AddExerciseForm.jsx'
@@ -9,11 +10,95 @@ import { useDocumentTitle, useLoad } from '../hooks.js'
  *
  * A sentinel rather than an id, and one that no catalogue row can collide with:
  * every other value in that <select> is a UUID. It is read and thrown away by
- * the change handler — it must never reach `heldId`, where a value that matches
- * no catalogue entry would leave `held` null and the section showing the
- * dropdown again with nothing to explain why.
+ * the change handler — it must never reach the request that opens an exercise,
+ * where a value matching no catalogue row would come back a 400 and put an
+ * error line where a movement should be.
  */
 const ADD_NEW = 'new'
+
+/** The half-typed set, mirrored into the browser (E10).
+ *
+ * The first and only thing this app keeps on the device, and deliberately the
+ * smallest thing it could be: the two strings sitting in the weight and reps
+ * boxes, scoped to the block they were typed into.
+ *
+ * **A7 stands.** The log itself is never in `localStorage`. Every set reaches
+ * the API as it is logged and the open exercise is a row on the server (E8), so
+ * the only thing kept here is what has not been submitted yet. There is nothing
+ * to sync, nothing to reconcile, and nothing lost when the storage is empty,
+ * blocked, or belongs to another device.
+ *
+ * This overturns Z6 for restored drafts only — history still never seeds a box,
+ * and never will. What comes back is what this user typed, on this device, into
+ * this exercise, and it comes back visibly marked (`data-restored`, and the
+ * line beside the boxes). That marking is not decoration: Z6's objection was
+ * that a number the user did not type fails *silently*, and it is the whole
+ * answer to it.
+ *
+ * All three of these touch `localStorage` inside try/catch and answer with
+ * nothing when it throws. Private-mode Safari, a browser with site data blocked
+ * and a full quota all throw on access, and a draft is a nicety: it must never
+ * break the zone, never surface an error, and never stop a set being logged.
+ */
+const DRAFT_PREFIX = 'gym-app:draft-set:'
+
+/** What was typed into this block before the page went away, or null.
+ *
+ * Keyed by the performed exercise, so a draft can never surface against a
+ * different movement, a different session, or a second block of the same
+ * movement (E7). Anything that is not an object of two strings reads as no
+ * draft: a key from an older shape of this code, or one edited by hand, must
+ * not put junk in a box.
+ */
+function readDraft(id) {
+  try {
+    const stored = window.localStorage.getItem(DRAFT_PREFIX + id)
+    if (stored === null) return null
+    const draft = JSON.parse(stored)
+    if (draft === null || typeof draft !== 'object' || Array.isArray(draft)) return null
+    const weight = typeof draft.weight === 'string' ? draft.weight : ''
+    const reps = typeof draft.reps === 'string' ? draft.reps : ''
+    return weight === '' && reps === '' ? null : { weight, reps }
+  } catch {
+    return null
+  }
+}
+
+/** Mirror the two boxes, as the strings they are.
+ *
+ * Exactly as typed, so a half-typed `62.` survives as a half-typed `62.` — the
+ * same reason `weight` and `reps` are strings on the page rather than numbers.
+ * Two empty boxes are not a draft, so the key is removed rather than written as
+ * two empty strings; and every other draft key goes with it, because there is
+ * one open exercise (E3) and a second key is always litter from a block that
+ * closed on another device or in a tab that never came back.
+ */
+function writeDraft(id, weight, reps) {
+  clearDrafts()
+  if (weight === '' && reps === '') return
+  try {
+    window.localStorage.setItem(DRAFT_PREFIX + id, JSON.stringify({ weight, reps }))
+  } catch {
+    // Quota, private mode, blocked site data. What is on screen is unaffected;
+    // all that is lost is coming back to it.
+  }
+}
+
+/** Every draft key, gone: the exercise closed, or a new draft is replacing it. */
+function clearDrafts() {
+  try {
+    const keys = []
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index)
+      if (key !== null && key.startsWith(DRAFT_PREFIX)) keys.push(key)
+    }
+    // Collected first and removed after: removing one while walking the index
+    // shifts every key behind it down by one, and the walk skips the next.
+    keys.forEach((key) => window.localStorage.removeItem(key))
+  } catch {
+    // Nothing to clear if the storage cannot be read in the first place.
+  }
+}
 
 /** One set as a single line: "60 kg × 8", or "8 reps" when it carried no weight.
  *
@@ -58,11 +143,17 @@ function SessionDate({ at }) {
  * which can be missing when one workout ran longer than the other. `lastTime`
  * absent altogether means there is no such column — Completed exercises passes
  * nothing and renders exactly as it did.
+ *
+ * `rows` is absent for the same list, and means the set is a record rather than
+ * something to act on: the row is the numbers and nothing else (E6). Every
+ * exercise under Completed exercises is closed, so Edit and Delete down there
+ * would be controls the API now refuses.
  */
 function SetRow({ set, number, scope, rows, lastTime }) {
   // A row this session has not reached yet has no set to act on, so it has no
-  // row identity either: nothing can be opened, armed or failed on it.
-  const row = set === null ? null : `${scope}:${set.id}`
+  // row identity either: nothing can be opened, armed or failed on it. Nor has
+  // a row in a list rendered without actions at all.
+  const row = set === null || rows === undefined ? null : `${scope}:${set.id}`
   const armed = row !== null && rows.armed === row
   const failure = row !== null && rows.failure?.row === row ? rows.failure.message : null
 
@@ -88,7 +179,7 @@ function SetRow({ set, number, scope, rows, lastTime }) {
         <span className="set-measures" data-none="">
           —
         </span>
-      ) : rows.open === row ? (
+      ) : rows?.open === row ? (
         // Nested in the <li> so the row keeps its number and its place: this is
         // the same set, being corrected, not a form standing in for it. The
         // boxes are labelled for a screen reader only — a visible label per box
@@ -131,28 +222,30 @@ function SetRow({ set, number, scope, rows, lastTime }) {
       ) : (
         <>
           <span className="set-measures">{setSummary(set)}</span>
-          <span className="set-actions">
-            <button
-              className="set-action"
-              type="button"
-              onClick={() => rows.edit(row, set)}
-              disabled={rows.busy}
-            >
-              Edit
-            </button>
-            {/* Tabbing away is moving away too; the pointer half of it is in
-                the hook, which sees taps that land on nothing focusable. */}
-            <button
-              className="set-action"
-              data-armed={armed ? '' : undefined}
-              type="button"
-              onClick={() => rows.remove(row, set)}
-              onBlur={() => rows.disarm(row)}
-              disabled={rows.busy}
-            >
-              {armed ? 'Sure?' : 'Delete'}
-            </button>
-          </span>
+          {rows !== undefined && (
+            <span className="set-actions">
+              <button
+                className="set-action"
+                type="button"
+                onClick={() => rows.edit(row, set)}
+                disabled={rows.busy}
+              >
+                Edit
+              </button>
+              {/* Tabbing away is moving away too; the pointer half of it is in
+                  the hook, which sees taps that land on nothing focusable. */}
+              <button
+                className="set-action"
+                data-armed={armed ? '' : undefined}
+                type="button"
+                onClick={() => rows.remove(row, set)}
+                onBlur={() => rows.disarm(row)}
+                disabled={rows.busy}
+              >
+                {armed ? 'Sure?' : 'Delete'}
+              </button>
+            </span>
+          )}
         </>
       )}
 
@@ -169,7 +262,7 @@ function SetRow({ set, number, scope, rows, lastTime }) {
 
 /** The sets logged into one exercise, numbered 1, 2, 3… by position.
  *
- * Both lists on this page come through here — the held exercise's own sets and
+ * Both lists on this page come through here — the open exercise's own sets and
  * the whole workout below it. Same data, two renderings, one phrasing: a set
  * reads identically in both, and there is no second wording to drift from.
  *
@@ -250,9 +343,11 @@ function withSetReplaced(session, saved) {
 /** The session without that set.
  *
  * Its `PerformedExercise` stays put even when it was the last set in it: the
- * user deleted a set, not the movement, and deleting the parent behind their
- * back would also throw away the block a later set would rejoin (A6). It keeps
- * its heading and shows the empty line chunk 02.1 already renders.
+ * user deleted a set, not the movement, and an open exercise is a place they
+ * are still standing in. Emptying it is how a mis-picked movement is undone —
+ * the way out flips back to Change exercise, which closes the block and, having
+ * nothing in it, removes it (E5). That is a tap the user makes, not one made
+ * behind their back here.
  */
 function withSetRemoved(session, removed) {
   return {
@@ -273,10 +368,16 @@ function withSetRemoved(session, removed) {
 /** The one row open for editing and the one armed for deletion — at most one of
  * each, across both lists.
  *
- * A set can be on screen twice at once: the held exercise's list and Completed
+ * A set can be on screen twice at once: the open exercise's list and Completed
  * exercises are the same sets rendered in two places. So a row is named by the
  * list it is in as well as by its set — `held:<id>` — or opening Edit in one
- * would open the same set in the other.
+ * would open the same set in the other. The zone's scope keeps its old name;
+ * it is a namespace for row ids and nothing reads it as a word.
+ *
+ * That collision cannot happen any more: Completed exercises has no Edit and no
+ * Delete (04), so the zone's list is the only one with rows in it. The scope
+ * stays — it costs nothing, and a row id that says which list it belongs to is
+ * still the honest name for it.
  *
  * Both writes go straight into `session` from the response and stop there
  * (A9): `current/` is not re-read, and nothing changes on screen before the
@@ -410,15 +511,21 @@ function useSetRows(setSession) {
  * The API returns exercises in the order they were first started, so they are
  * numbered by position and neither sorted nor grouped here. An exercise whose
  * sets have all been deleted (chunk 05) keeps its heading rather than vanishing.
+ *
+ * Its sets are a record and are rendered as one: no `rows`, so no Edit and no
+ * Delete. Everything down here is closed by definition — the open exercise is
+ * up in the zone — and the API refuses every write to a closed block (E6), so
+ * the buttons would be controls that fail. Correcting a set that has been
+ * logged is Django admin's job now, by choice.
  */
-function PerformedExercise({ performed, index, rows }) {
+function PerformedExercise({ performed, index }) {
   return (
     <li className="performed">
       <h3>
         {index}. {performed.exercise_name}
       </h3>
 
-      <SetList sets={performed.performed_sets} scope="completed" rows={rows} />
+      <SetList sets={performed.performed_sets} scope="completed" />
     </li>
   )
 }
@@ -475,8 +582,16 @@ export default function CurrentSession() {
   // The loaded session becomes the page's own state: what gets logged into it
   // from here on is known to this page before it is re-read from the API.
   const [session, setSession] = useState(null)
+  // Flipped in the same effect, so the two are always read together. `state`
+  // says the request is answered; `session` catches up a render later, and the
+  // redirects below have to wait for the second of those — one that only
+  // waited for `state` would read `session === null` in the gap and bounce a
+  // real session out of the exercise address.
+  const [loaded, setLoaded] = useState(false)
   useEffect(() => {
-    if (state === 'ready') setSession(data)
+    if (state !== 'ready') return
+    setSession(data)
+    setLoaded(true)
   }, [state, data])
 
   // The same move, for the same reason: the loaded catalogue becomes the page's
@@ -487,39 +602,47 @@ export default function CurrentSession() {
     if (catalogueState === 'ready') setCatalogue(catalogueData)
   }, [catalogueState, catalogueData])
 
-  // The exercise being recorded into, by catalogue id — a UUID string, so it is
-  // kept exactly as it arrived. Holding one is a client-side act (A10): nothing
-  // is written until its first set (03.5), so a refresh comes back to the
-  // dropdown with everything already logged still logged.
-  const [heldId, setHeldId] = useState(null)
-  const held = catalogue?.find((exercise) => exercise.id === heldId) ?? null
+  // The exercise being recorded into — the one row in this session the server
+  // has not closed yet (E1, E8). Derived, never stored: `current/` answers with
+  // the detail serializer, so the open block and every set in it are already in
+  // the one request this page makes on mount. That is the whole restore. A
+  // reload, a tab switch or a browser reopened the next morning lands back
+  // inside the exercise with no second request and no second copy of the truth,
+  // and there is nothing here that a refresh can drop.
+  const openExercise =
+    session?.performed_exercises.find((performed) => performed.ended_at === null) ?? null
+  // Addressed by the block's own id rather than by its movement: a session may
+  // hold two blocks of the same exercise (E7), and a `.find` on the definition
+  // would answer with the first of them for ever.
+  const openSets = openExercise?.performed_sets ?? []
 
-  // Whether the dropdown has been swapped for the add form. One of three states
-  // this section is in — dropdown, adding, holding — and never two at once, so
-  // it is only ever read where nothing is held.
+  // Whether the dropdown has been swapped for the add form. Only ever read
+  // where nothing is open: the chooser is the state of the zone in which there
+  // is no exercise, and the add form is a state of the chooser.
   const [adding, setAdding] = useState(false)
 
   // The name of the movement a typed one turned out to already be, for the
-  // quiet line under it while it is held (N5). It belongs to this hold: it is
-  // dropped with the exercise, in `releaseExercise`.
+  // quiet line under it while it is being recorded (N5). It belongs to this
+  // block: it is dropped when the exercise closes.
   const [alreadyThere, setAlreadyThere] = useState(null)
 
-  // Whether the page is the zone. One boolean is the whole mechanism (Z4):
-  // recording a movement is a state of this tab, not a destination, so there is
-  // no route, no query parameter, no history entry and nothing persisted — a
-  // reload comes back to the session page, exactly as it already came back to
-  // the dropdown with the hold dropped (A10).
-  const [zoneOpen, setZoneOpen] = useState(false)
+  // Where the user is (E9). The zone is an address rather than a boolean:
+  // /current-session/exercise is the exercise, /current-session is the workout,
+  // and this one line is what used to be `choosing`. It survives a reload, the
+  // back gesture is a real step out of it, and a link into it lands where the
+  // user was.
+  const atExercise = useMatch('/current-session/exercise') !== null
+  const navigate = useNavigate()
 
-  // What has already been done to the held exercise in this session, read off
-  // the same `session` state the list below reads — not a second copy of it.
-  // No block at all is the ordinary case: the exercise has simply not been
-  // trained yet today, and one appears with its first set (03.5).
-  const heldPerformed =
-    session?.performed_exercises.find(
-      (performed) => performed.exercise_definition === heldId,
-    ) ?? null
-  const heldSets = heldPerformed?.performed_sets ?? []
+  // Opening one is a request now (E2, A9), so it has a wait and a failure of
+  // its own — both of which belong beside the chooser that started them.
+  const [opening, setOpening] = useState(false)
+  const [openError, setOpenError] = useState(null)
+
+  // And so is leaving one (E5): the same two, for the one control that closes
+  // the block.
+  const [closing, setClosing] = useState(false)
+  const [closeError, setCloseError] = useState(null)
 
   // What was done to this movement before today: fetched once, when it is
   // picked (Z5), and refetched only when a different one is (03). Not after
@@ -528,19 +651,24 @@ export default function CurrentSession() {
   //
   // `exclude_session` is not optional. Without it the running workout becomes
   // its own "last time" the moment a second set goes in, and both columns show
-  // the same numbers. With no exercise held there is nothing to ask, so the
+  // the same numbers. With no exercise open there is nothing to ask, so the
   // loader answers `null` rather than firing a request.
+  //
+  // Keyed on the movement rather than on the block, so coming back to an
+  // exercise later in the session (E7) shows the same three past sessions the
+  // first block showed without asking for them again: it is the same movement,
+  // and the running session is excluded from the answer either way.
   const history = useLoad(
     () =>
-      heldId === null || session === null
+      openExercise === null || session === null
         ? Promise.resolve(null)
         : api.get(
             'performed-exercises/history/' +
-              `?exercise_definition=${heldId}` +
+              `?exercise_definition=${openExercise.exercise_definition}` +
               `&exclude_session=${session.id}` +
               '&limit=3',
           ),
-    [heldId],
+    [openExercise?.exercise_definition],
   )
   // Newest trained first, so last time is the head of it and the two behind it
   // are the Earlier lines (04) — the same three the one request already
@@ -551,11 +679,54 @@ export default function CurrentSession() {
 
   // What is about to be logged. Kept as typed rather than as numbers, so an
   // empty box stays empty and a decimal point survives being typed. It outlives
-  // a successful log on purpose (below); only letting go of the exercise
-  // clears it, since what was typed belonged to that movement.
+  // a successful log on purpose (below); only closing the exercise clears it,
+  // since what was typed belonged to that movement.
   const [weight, setWeight] = useState('')
   const [reps, setReps] = useState('')
   const entry = parseEntry(weight, reps)
+
+  // Whether what is in the boxes came back from `localStorage` rather than from
+  // the keyboard (E10). It is the mitigation Z6 asked for, so it is state of its
+  // own rather than something inferred: while it is true the boxes say so, and
+  // it goes the moment the user touches either of them or logs a set.
+  const [restored, setRestored] = useState(false)
+
+  // Arriving at a block reads its draft, once. Keyed on the block's id, so it
+  // fires on the mount that lands back inside an exercise after a reload and on
+  // nothing else: typing afterwards is typing, not restoring, and this must
+  // never fight the user for a box they are in the middle of.
+  //
+  // A brand-new exercise has a brand-new id and therefore no key, so its boxes
+  // are empty. That is Z6 exactly as it always was — nothing seeds a box from
+  // history, from last time, or from the set just logged.
+  useEffect(() => {
+    if (openExercise === null) return
+    const draft = readDraft(openExercise.id)
+    if (draft === null) return
+    setWeight(draft.weight)
+    setReps(draft.reps)
+    setRestored(true)
+  }, [openExercise?.id])
+
+  /** Type into a box: the boxes are the truth, and the draft mirrors them.
+   *
+   * Written on the change itself rather than from an effect or a timer — two
+   * short strings cost less than the machinery that would avoid writing them,
+   * and a write that has already happened is one a locked phone cannot
+   * interrupt. Typing is also what makes a restored number the user's own
+   * again: the marker goes here, and the values stay.
+   */
+  function typeWeight(typed) {
+    setWeight(typed)
+    setRestored(false)
+    if (openExercise !== null) writeDraft(openExercise.id, typed, reps)
+  }
+
+  function typeReps(typed) {
+    setReps(typed)
+    setRestored(false)
+    if (openExercise !== null) writeDraft(openExercise.id, weight, typed)
+  }
 
   const [logging, setLogging] = useState(false)
   const [logError, setLogError] = useState(null)
@@ -582,52 +753,46 @@ export default function CurrentSession() {
     }
   }
 
-  /** Save the typed set: up to two requests, then straight into `session`.
+  /** Save the typed set: one request, then straight into `session`.
    *
-   * The `PerformedExercise` is created here and nowhere earlier, because until
-   * now there was nothing to put in it (A10). An exercise already trained in
-   * this session is reused rather than started again (A6), so a workout that
-   * wanders back to a movement keeps one block for it.
+   * The `PerformedExercise` exists before a single set is logged into it now —
+   * choosing the movement is what created it (E2) — so there is no lazy create
+   * here any more and no branch on whether the block is there. It is, or the
+   * user is not on this screen.
+   *
+   * Not a submit handler: the boxes are not in a <form>, so Enter in either of
+   * them does nothing at all (E11). Logging a set is a tap on Log set, always,
+   * which is half of "it submits without you realising" gone.
    *
    * Both lists redraw off `setSession` alone — there is one copy of the log on
    * this page, so nothing is wired between them and `current/` is not re-read.
    */
-  async function logSet(submitEvent) {
-    submitEvent.preventDefault()
+  async function logSet() {
     if (entry === null || logging) return
 
     setLogging(true)
     setLogError(null)
     try {
-      let performed = heldPerformed
-      if (performed === null) {
-        const created = await api.post('performed-exercises/', {
-          training_session: session.id,
-          exercise_definition: heldId,
-        })
-        // That serializer answers without `performed_sets`, and both lists read
-        // it, so the empty array it stands for is filled in here.
-        performed = { ...created, performed_sets: [] }
-        setSession((current) => ({
-          ...current,
-          performed_exercises: [...current.performed_exercises, performed],
-        }))
-      }
-
       const set = await api.post('performed-sets/', {
-        performed_exercise: performed.id,
+        performed_exercise: openExercise.id,
         ...entry,
       })
       setSession((current) => ({
         ...current,
         performed_exercises: current.performed_exercises.map((candidate) =>
-          candidate.id === performed.id
+          candidate.id === set.performed_exercise
             ? { ...candidate, performed_sets: [...candidate.performed_sets, set] }
             : candidate,
         ),
       }))
       // Weight and reps stay as they are: another set of the same thing is the
-      // common case, and it should cost one tap.
+      // common case, and it should cost one tap. The draft stays with them,
+      // deliberately — it mirrors the boxes, and clearing it here would bring
+      // the page back emptier than the screen the user was looking at.
+      //
+      // They are the user's numbers now whatever they were a moment ago: they
+      // have been looked at and logged, so the restored marker goes.
+      setRestored(false)
     } catch (failure) {
       console.error(failure)
       setLogError('Could not log that set. Please try again.')
@@ -636,22 +801,125 @@ export default function CurrentSession() {
     }
   }
 
-  /** Adding a movement is choosing it: the section goes straight to recording.
+  /** Open the exercise: the tap that means "I am doing this now" (E2).
    *
-   * This is the whole point of the chunk (N10). The created row goes into the
-   * page's copy of the catalogue — so it is in the dropdown for the rest of the
-   * session, with no second GET (N11) — and is held on the spot, which lands the
-   * section in exactly the state choosing anything else from the list lands it
-   * in: the name, an empty set list, the weight and reps boxes.
+   * The row is written when the movement is picked, not when its first set is
+   * logged, which is the whole complaint this iteration answers — the block
+   * used to appear out of Log set, so the exercise "submitted without you
+   * realising". It costs a round trip and the user waits for it (A9): there is
+   * no optimistic row, because the thing being bought with the wait is knowing
+   * that the exercise is really open.
    *
-   * Nothing is written to the session. A hold is client-side (A10): the first
-   * set is still what creates the `PerformedExercise`, so a movement added and
-   * then thought better of leaves the workout exactly as it was.
+   * `openExercise` finds the appended row on the next render, so nothing else
+   * has to be set for the zone to become the recording screen.
+   *
+   * `alreadyInCatalogue` is the name a typed one turned out to already be
+   * (N5), and it is only said once the exercise is actually open — a failed
+   * open must leave no note about a movement nothing is recording.
    */
-  function holdCreated(created) {
-    setCatalogue((list) => insertByName(list, created))
-    setHeldId(created.id)
+  async function openExerciseRow(exerciseDefinition, alreadyInCatalogue = null) {
+    if (opening) return
+
+    setOpening(true)
+    setOpenError(null)
+    // The add form has done its job and must not be sitting there live while
+    // the request it started is in flight (A9).
     setAdding(false)
+    try {
+      const created = await api.post('performed-exercises/', {
+        training_session: session.id,
+        exercise_definition: exerciseDefinition,
+      })
+      setSession((current) => ({
+        ...current,
+        // That serializer answers without `performed_sets`, and both lists read
+        // it, so the empty array it stands for is filled in here.
+        performed_exercises: [...current.performed_exercises, { ...created, performed_sets: [] }],
+      }))
+      setAlreadyThere(alreadyInCatalogue)
+    } catch (failure) {
+      console.error(failure)
+      // Nothing was added to `session`, so the chooser is exactly as it was,
+      // with the same movement one tap away.
+      setOpenError('Could not open that exercise. Please try again.')
+    } finally {
+      setOpening(false)
+    }
+  }
+
+  /** Close it, and let go of what was being typed into it (E5, E7).
+   *
+   * The one control at the bottom of the zone ends here whichever word it is
+   * wearing, because both are the same request — and the answer says which act
+   * it was. 204: there was nothing in it, so the block never happened and the
+   * row is gone; back to the chooser, still in the zone. 200: it is in the log
+   * with `ended_at` stamped; out of the zone.
+   *
+   * Either way it is final (E6). Coming back to the movement later starts a
+   * second block rather than reopening this one, and the response is merged
+   * over the stored row rather than replacing it — `end/` answers with the
+   * plain serializer, which carries no `performed_sets`, and the sets it does
+   * not mention are still the sets that were logged.
+   */
+  async function closeExerciseRow() {
+    if (closing) return
+
+    setClosing(true)
+    setCloseError(null)
+    try {
+      const closed = await api.post(`performed-exercises/${openExercise.id}/end/`, {})
+      setSession((current) => ({
+        ...current,
+        performed_exercises:
+          closed === null
+            ? current.performed_exercises.filter((candidate) => candidate.id !== openExercise.id)
+            : current.performed_exercises.map((candidate) =>
+                candidate.id === closed.id ? { ...candidate, ...closed } : candidate,
+              ),
+      }))
+      // An empty block leaves the user where they are, on the chooser — the
+      // address does not change because they have not left the exercise, they
+      // have gone back to picking one. A logged one is done with, so it steps
+      // out to the workout, where it is now in Completed exercises. Only on
+      // success: the failure below leaves them here with the error and the
+      // retry.
+      if (closed !== null) navigate('/current-session')
+      // All of it belonged to the movement just closed: a half-typed set, the
+      // note about its name, and — the reason this is not just tidiness — a row
+      // left open for editing or armed for deletion, which would be waiting
+      // that way the next time the zone opens.
+      setWeight('')
+      setReps('')
+      // Including the copy of it in the browser (E10): the draft belonged to
+      // the block that just closed, and closing is final (E6), so there is
+      // nothing left for it to come back to. Every draft key goes, not just
+      // this one — at most one is ever wanted, and the rest are litter.
+      clearDrafts()
+      setRestored(false)
+      setLogError(null)
+      setAlreadyThere(null)
+      rows.close('held')
+    } catch (failure) {
+      console.error(failure)
+      // The zone stays exactly as it is, sets and all: a close that did not go
+      // through must never blank the screen or lose a set.
+      setCloseError('Could not close that exercise. Please try again.')
+    } finally {
+      setClosing(false)
+    }
+  }
+
+  /** Adding a movement is choosing it: the zone goes straight to recording.
+   *
+   * The created row goes into the page's copy of the catalogue — so it is in
+   * the dropdown for the rest of the session, with no second GET (N11) — and is
+   * opened on the spot, which lands the zone in exactly the state choosing
+   * anything else from the list lands it in: the name, an empty set list, the
+   * weight and reps boxes.
+   */
+  function chooseCreated(created) {
+    setCatalogue((list) => insertByName(list, created))
+    openExerciseRow(created.id)
   }
 
   /** The name was already a movement, so that movement is the answer (N5).
@@ -659,60 +927,30 @@ export default function CurrentSession() {
    * It is put into the list first if it is not in it — which happens when this
    * page loaded before somebody else added it. The catalogue *page* deliberately
    * does the opposite, because there the list is a table being read and a
-   * missing row is a stale read that a reload fixes. Here the list is what
-   * `held` is looked up in, so an entry about to be recorded has to be in it or
-   * the section cannot show the movement it is recording.
+   * missing row is a stale read that a reload fixes. Here the list is the
+   * chooser, and a movement being recorded should be in it.
    */
-  function holdExisting(existing) {
+  function chooseExisting(existing) {
     setCatalogue((list) =>
       list.some((entry) => entry.id === existing.id) ? list : insertByName(list, existing),
     )
     // Said quietly under the name, not as an error: what matters mid-workout is
     // that recording has started against the movement they meant.
-    setAlreadyThere(existing.name)
-    setHeldId(existing.id)
-    setAdding(false)
+    openExerciseRow(existing.id, existing.name)
   }
 
-  /** Let go of the exercise, and of what was being typed into it.
+  /** Out of the chooser, having chosen nothing.
    *
-   * Both ways out of a hold end here — Change exercise backing out of a mis-tap
-   * and Log exercise finishing a movement — because they are the same act on the
-   * client and neither is a request: every set was saved as it was logged (A7),
-   * so there is nothing left to write when the user is done with the exercise
-   * (A10). Nothing records that a movement was finished, so holding it again
-   * later simply continues it (A6).
-   *
-   * Neither one deletes anything. Letting go of an exercise leaves every set
-   * logged into it exactly where it is, in Completed exercises; removing a set
-   * is chunk 05's job, on the set itself.
+   * The one way out of the zone that is not a request, because nothing was
+   * opened: there is no row to close and nothing to undo. A half-typed add form
+   * goes with it rather than being what the zone comes back to. A push, not a
+   * replace — the chooser was somewhere the user went, and Back from the
+   * workout can take them back to it.
    */
-  function releaseExercise() {
-    setHeldId(null)
-    setWeight('')
-    setReps('')
-    setLogError(null)
-    // Both belong to the movement being let go: the note is about the name that
-    // held it, and a half-typed add form must not be what Change exercise
-    // returns to.
-    setAlreadyThere(null)
+  function cancelChoosing() {
     setAdding(false)
-    // Its list of sets goes with it; the same sets are still below, editable
-    // there, and every one of them is still stored.
-    rows.close('held')
-  }
-
-  /** Leave the zone: the × and Log exercise, and every exit made elsewhere.
-   *
-   * It is safe to be blunt about, because it destroys nothing: every set
-   * reached the API as it was logged (A7) and letting go of a movement never
-   * deleted anything. Going out through `releaseExercise` is what stops a row
-   * left open — or, worse, left armed for deletion — from being there waiting
-   * when the zone is opened again.
-   */
-  function closeZone() {
-    releaseExercise()
-    setZoneOpen(false)
+    setOpenError(null)
+    navigate('/current-session')
   }
 
   // Which way out is waiting for its second tap — 'end', 'discard' or neither.
@@ -733,17 +971,23 @@ export default function CurrentSession() {
   /** Back to the Start state, the session having been ended or deleted.
    *
    * There is nothing to write and nothing to save: every set went to the API as
-   * it was logged (A7). The client-side odds and ends do have to go, though —
-   * a held exercise, an open zone or a row left armed belongs to the workout
-   * that just finished, not to the next one — a session ended or discarded can
-   * never leave the zone up over no session at all.
+   * it was logged (A7). Dropping the session is the whole of it — the zone is
+   * an address now rather than a flag on this page, and with no session there
+   * is no open exercise to pin anyone to it.
+   *
+   * No rows are closed here any more. The zone's were cleared when the exercise
+   * closed, which under E4 is the only way this page was reached, and Completed
+   * exercises no longer has rows to leave open or armed (04).
+   *
+   * Nothing navigates either: End and Discard are only reachable from the
+   * workout, so the user is already at /current-session and stays there. What
+   * guards the other address is the redirect below — typing
+   * /current-session/exercise after this bounces straight back.
    */
   function leaveSession() {
     setSession(null)
     setConfirming(null)
     setExitError(null)
-    closeZone()
-    rows.close('completed')
   }
 
   /** Close the workout and keep it: it is in history from here on.
@@ -790,6 +1034,37 @@ export default function CurrentSession() {
     }
   }
 
+  /* The two redirects (E9). Rendered rather than run from an effect, so React
+     Router settles the address in one pass and no wrong screen is painted on
+     the way; both `replace`, so a bounce piles up no history entries. Both wait
+     for `loaded`, because before the answer is known neither question has one.
+
+     They cannot loop into each other: the first needs an open exercise, which
+     needs a session, and the second needs no session at all.
+
+     There is deliberately no third. /current-session/exercise with a session
+     and nothing open is a legitimate landing — it is the chooser, and a reload
+     while choosing should come back to it rather than throw the user out. */
+
+  // While an exercise is open, that is where you are. This is the one that
+  // makes the pinning real: it catches the back gesture, the nav link, a
+  // bookmark and a reload alike. Two consequences, both intended — because the
+  // bounce replaces, a second Back from an open exercise leaves the Current
+  // session tab entirely, to wherever the user was before it (the exercise pins
+  // them to the tab, not to the browser); and tapping Current session in the nav
+  // lands them back inside the exercise, so End session cannot be reached until
+  // they close it. That is E4, the rule the API already keeps, shown rather
+  // than explained.
+  if (loaded && !atExercise && openExercise !== null) {
+    return <Navigate to="/current-session/exercise" replace />
+  }
+
+  // And with no session there is nothing to record into, so the address means
+  // nothing: the session was ended, discarded, or there never was one.
+  if (loaded && atExercise && session === null) {
+    return <Navigate to="/current-session" replace />
+  }
+
   return (
     <>
       <h1>Current session</h1>
@@ -814,7 +1089,7 @@ export default function CurrentSession() {
       )}
 
       {session &&
-        (zoneOpen ? (
+        (atExercise ? (
           /* The takeover (Z1): while the zone is open the page renders it
              *instead of* its other contents rather than on top of them, so
              there is nothing to position, nothing to stack, no scroll to lock
@@ -827,34 +1102,35 @@ export default function CurrentSession() {
              not a new one. */
           <section className="record-set exercise-zone">
             <div className="zone-header">
-              {/* What the screen is about: the movement once one is held, and
-                  the question until then (Z2). React escapes it for us —
-                  catalogue names are user data. */}
-              <h2>{held ? held.name : 'Record new exercise'}</h2>
-              {/* The only way out, and there is one of it (Z3): no Escape, no
-                  browser Back, no tap-outside, because under Z1 there is no
-                  outside. Blunt on purpose — it destroys nothing. */}
-              <button
-                className="zone-close"
-                type="button"
-                aria-label="Close"
-                onClick={closeZone}
-              >
-                ×
-              </button>
+              {/* What the screen is about: the movement once one is open, and
+                  the question until then (Z2). The name comes off the block
+                  itself, which the API answered with, so the zone can say what
+                  it is recording even if the catalogue never loaded. React
+                  escapes it for us — catalogue names are user data. */}
+              <h2>{openExercise ? openExercise.exercise_name : 'Record new exercise'}</h2>
+              {/* No × any more. Leaving an exercise is a request with a meaning
+                  and the control that makes it says which meaning, down at the
+                  bottom of the zone beside Log set; a second, wordless way out
+                  up here would be the vaguest of the three this replaced. */}
             </div>
 
-            {held ? (
+            {openExercise ? (
               <div className="held-exercise">
                 {/* Only after a typed name turned out to exist already, and only
-                    for as long as this movement is held. Neutral: nothing went
+                    while that movement is open. Neutral: nothing went
                     wrong, and the movement it is about is the zone's heading,
                     directly above it. */}
                 {alreadyThere && (
                   <p className="status">{alreadyThere} was already in the catalogue.</p>
                 )}
 
-                <form className="log-set" onSubmit={logSet}>
+                {/* A <div>, not a <form>, and deliberately (E11): inside a form
+                    Enter in either box logged a set, which is the most reliable
+                    way there was to log something without meaning to. There is
+                    now no keystroke anywhere in the zone that writes a set —
+                    only the tap on Log set. The inline edit form in a set row is
+                    a different act and keeps its Enter. */}
+                <div className="log-set">
                   <p>
                     <label htmlFor="set-weight">Weight (kg)</label>
                     <input
@@ -867,7 +1143,11 @@ export default function CurrentSession() {
                       // Blank is a bodyweight set, so this one is never required.
                       placeholder="—"
                       value={weight}
-                      onChange={(event) => setWeight(event.target.value)}
+                      // The styling hook, in the way `data-armed` and
+                      // `data-none` already are: a number that came back from
+                      // the browser must not look like one just typed (E10).
+                      data-restored={restored ? '' : undefined}
+                      onChange={(event) => typeWeight(event.target.value)}
                     />
                   </p>
                   <p>
@@ -879,55 +1159,70 @@ export default function CurrentSession() {
                       step="1"
                       min="1"
                       value={reps}
-                      onChange={(event) => setReps(event.target.value)}
+                      data-restored={restored ? '' : undefined}
+                      onChange={(event) => typeReps(event.target.value)}
                     />
                   </p>
-                  {/* One tap per set and one tap per movement: the two sizes of
-                      thing this section does. Log set is off until the entry is
-                      a set, and off again while it is being saved, so a second
-                      tap cannot log a second set (A9).
+                  {/* The other half of the marker, and the half that says what
+                      happened. Quiet — `.status` weight, not an error, because
+                      nothing went wrong — and it sits between the boxes and Log
+                      set, in the path of the eye going from one to the other.
+                      It is not a gate: Log set is as live as it ever was, and
+                      there is no dialog between the user and the bar. */}
+                  {restored && (
+                    <p className="status restored-note">
+                      Picked up where you left off — check these before logging.
+                    </p>
+                  )}
+                  {/* One tap per set, and one way out of the exercise — which
+                      is the whole of the change here. Log set is off until the
+                      entry is a set, and off again while anything is in flight,
+                      so a second tap cannot log a second set (A9).
 
-                      Change exercise sits beside them whatever has happened, so
-                      there is never a state with an exercise held and no visible
-                      way back to the dropdown. It deletes nothing — no button in
-                      this section does, at any point. Once a set is saved it
-                      stays saved, and a wrong exercise is simply left behind
-                      with whatever was logged into it. */}
+                      Beside it stands exactly one control, and it says which
+                      act it is because the two acts are now different requests
+                      with different outcomes. Nothing logged yet: Change
+                      exercise, and the block is deleted as though the movement
+                      had never been picked (E5). Something logged: Log exercise,
+                      and it is stamped closed and goes into the workout. The ×,
+                      the old Log exercise and the old Change exercise all did
+                      the identical client-side nothing; there is one of them
+                      now, and it does something.
+
+                      There is deliberately no way to abandon an exercise that
+                      has sets in it — what is in the log is in the log. The way
+                      back from a mis-tap is already here and needs no button of
+                      its own: delete the sets one by one in the list below, and
+                      when the last one goes this control flips back to Change
+                      exercise, which removes the block. Do not add a Discard. */}
                   <div className="log-set-actions">
                     <button
                       className="button button--tap"
-                      type="submit"
-                      disabled={entry === null || logging}
+                      type="button"
+                      onClick={logSet}
+                      disabled={entry === null || logging || closing}
                     >
                       {logging ? 'Logging…' : 'Log set'}
                     </button>
-                    {/* Saves nothing: there is nothing left to save. Do not go
-                        looking for the request. Only once there is a movement to
-                        call finished — before that, Change exercise is the way
-                        out and this would be a disabled button saying nothing. */}
-                    {heldSets.length > 0 && (
+                    {openSets.length > 0 ? (
                       <button
                         className="log-exercise"
                         type="button"
-                        onClick={closeZone}
-                        disabled={logging}
+                        onClick={closeExerciseRow}
+                        disabled={logging || closing}
                       >
-                        Log exercise
+                        {closing ? 'Logging…' : 'Log exercise'}
+                      </button>
+                    ) : (
+                      <button
+                        className="change-exercise"
+                        type="button"
+                        onClick={closeExerciseRow}
+                        disabled={logging || closing}
+                      >
+                        {closing ? 'Changing…' : 'Change exercise'}
                       </button>
                     )}
-                    {/* Nearly the same act as Log exercise — both let go of the
-                        hold — but a different thing to the user, and now a
-                        different destination: this one is "wrong exercise, take
-                        me back", so it stays in the zone and asks again, where
-                        "that movement is done" leaves. */}
-                    <button
-                      className="change-exercise"
-                      type="button"
-                      onClick={releaseExercise}
-                      disabled={logging}
-                    >
-                      Change exercise
-                    </button>
                   </div>
                   {/* Beside the buttons, where the tap that failed was: nothing
                       typed is touched, so the same values are there to retry. */}
@@ -936,7 +1231,12 @@ export default function CurrentSession() {
                       {logError}
                     </p>
                   )}
-                </form>
+                  {closeError && (
+                    <p className="status" data-state="error">
+                      {closeError}
+                    </p>
+                  )}
+                </div>
 
                 {/* Where the user is working, so the answer to "how many have I
                     done, and at what?" is here rather than in the section
@@ -983,7 +1283,7 @@ export default function CurrentSession() {
                   )}
 
                   <SetList
-                    sets={heldSets}
+                    sets={openSets}
                     scope="held"
                     rows={rows}
                     lastTime={lastTime === null ? undefined : lastTime.performed_sets}
@@ -1028,8 +1328,8 @@ export default function CurrentSession() {
                  the way back out of a mis-tap, the same job Change exercise does
                  one state along. */
               <AddExerciseForm
-                onAdded={holdCreated}
-                onDuplicate={holdExisting}
+                onAdded={chooseCreated}
+                onDuplicate={chooseExisting}
                 onCancel={() => setAdding(false)}
               />
             ) : (
@@ -1037,13 +1337,16 @@ export default function CurrentSession() {
                 <select
                   aria-label="Exercise"
                   value=""
-                  disabled={catalogueState !== 'ready'}
+                  // Off while the exercise it just picked is being opened: the
+                  // wait is short, but a second pick during it would be a second
+                  // block nobody asked for (A9).
+                  disabled={catalogueState !== 'ready' || opening}
                   onChange={(event) => {
                     const chosen = event.target.value
-                    // The sentinel opens the form and goes no further: `heldId`
-                    // holds catalogue ids and nothing else.
+                    // The sentinel opens the form and goes no further: only
+                    // catalogue ids are ever sent as an exercise.
                     if (chosen === ADD_NEW) setAdding(true)
-                    else setHeldId(chosen)
+                    else openExerciseRow(chosen)
                   }}
                 >
                   <option value="">Choose an exercise</option>
@@ -1059,6 +1362,16 @@ export default function CurrentSession() {
                       offers no way to add blind to it. */}
                   <option value={ADD_NEW}>+ Add a new exercise…</option>
                 </select>
+                {/* The round trip, said out loud rather than hidden behind an
+                    optimistic row (A9): picking a movement writes it down, and
+                    the half-second it takes is the difference between having
+                    tapped a list and being in an exercise. */}
+                {opening && <p className="status">Opening…</p>}
+                {openError && (
+                  <p className="status" data-state="error">
+                    {openError}
+                  </p>
+                )}
                 {/* <Status> above speaks for the session, so a catalogue that
                     will not load says so here rather than looking like one. */}
                 {catalogueState === 'error' && (
@@ -1066,6 +1379,20 @@ export default function CurrentSession() {
                     Could not load the exercise list. Please try again.
                   </p>
                 )}
+                {/* The one way out of the zone that writes nothing, because
+                    nothing has been opened yet. It wears the same treatment as
+                    Change exercise one state along: both are "not this, take me
+                    back", and neither destroys anything. */}
+                <div className="zone-actions">
+                  <button
+                    className="change-exercise"
+                    type="button"
+                    onClick={cancelChoosing}
+                    disabled={opening}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </>
             )}
           </section>
@@ -1137,7 +1464,7 @@ export default function CurrentSession() {
             <button
               className="button button--tap button--major"
               type="button"
-              onClick={() => setZoneOpen(true)}
+              onClick={() => navigate('/current-session/exercise')}
             >
               Record new exercise
             </button>
@@ -1157,7 +1484,6 @@ export default function CurrentSession() {
                       key={performed.id}
                       performed={performed}
                       index={index + 1}
-                      rows={rows}
                     />
                   ))}
                 </ol>
