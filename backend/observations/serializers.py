@@ -43,6 +43,34 @@ class PerformedExerciseSerializer(OwnedRelationMixin, serializers.ModelSerialize
     does not force the client into a second request per exercise."""
 
     exercise_name = serializers.CharField(source='exercise_definition.name', read_only=True)
+    # And, for exactly the reason above, how the movement is loaded. A set is shown as
+    # `20 + 2 x 60 = 140 kg x 8`, and the two numbers that expression needs live on the
+    # catalogue entry -- which the session detail page does not load, because it asks
+    # only for `training-sessions/<id>/`. Carrying them here is what lets that page, the
+    # zone's "Last time" column and the Earlier lines all read the loading without a
+    # second request each.
+    #
+    # Read-only, always: the loading belongs to the catalogue entry, is set through
+    # `POST /exercises/<id>/loading/` and nowhere else, and is never reachable through a
+    # performed exercise (AGREED 2).
+    #
+    # Both are null whenever the movement has not been answered yet -- the pair is
+    # both-or-neither (W1) -- and DRF renders a null source as null rather than raising,
+    # which is the case the whole display falls back to today's plain totals on.
+    #
+    # Nothing computed rides along: no per_side, no total, no expression string. The
+    # arithmetic is the frontend's, in one module, so there is never a second copy of it
+    # to drift (W2, AGREED 3).
+    exercise_bar_kg = serializers.DecimalField(
+        source='exercise_definition.bar_kg',
+        max_digits=6,
+        decimal_places=2,
+        read_only=True,
+    )
+    exercise_sides = serializers.IntegerField(
+        source='exercise_definition.sides',
+        read_only=True,
+    )
 
     def validate_training_session(self, value):
         return self._require_own(value, 'user')
@@ -54,6 +82,8 @@ class PerformedExerciseSerializer(OwnedRelationMixin, serializers.ModelSerialize
             'training_session',
             'exercise_definition',
             'exercise_name',
+            'exercise_bar_kg',
+            'exercise_sides',
             'exercise_prescription',
             'created_at',
         ]

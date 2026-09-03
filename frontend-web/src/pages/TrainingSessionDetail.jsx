@@ -2,7 +2,9 @@ import { Link, useParams } from 'react-router-dom'
 
 import { ApiError, api } from '../api.js'
 import Status from '../components/Status.jsx'
+import Worked from '../components/Worked.jsx'
 import { useDocumentTitle, useLoad } from '../hooks.js'
+import { loadingOf, weightParts } from '../sets.js'
 
 /** A missing session is an ordinary outcome for a stale link, not a failure. */
 async function loadSession(sessionId) {
@@ -39,9 +41,33 @@ function sessionDate(session) {
   })
 }
 
+/** The Weight (kg) cell: the set's working and its answer, or the raw total.
+ *
+ * Under a header that already says **Weight (kg)**, `20 + 2 × 45` · `= 110` is
+ * the whole story of a set: what the bar was, what went on one side, and what it
+ * came to, with the answer drawn at the weight the column was always read at.
+ * The unit is left off because the column has already said it.
+ *
+ * `weightParts` says whether there is any working at all, and it is the only
+ * thing asked. Every set it has nothing to add to — a bodyweight set, a movement
+ * nobody has said how to load, a single unloaded side, a total lighter than its
+ * own bar — comes back with no working, and the cell then renders the raw value
+ * it has always rendered: `110.00`, trailing zeros and all, in no elements. A
+ * set this feature cannot describe is a set it does not touch.
+ */
+function weightCell(set, loading) {
+  const parts = weightParts(set.weight_kg, loading, { unit: false })
+  if (parts === null || parts.working === null) return set.weight_kg ?? '—'
+  return <Worked working={parts.working} total={parts.total} />
+}
+
 function PerformedExercise({ performed, index }) {
   const sets = performed.performed_sets
   const columns = SET_COLUMNS.filter((column) => sets.some((set) => set[column.key] !== null))
+  // How the movement is loaded, once for the whole table: one performed
+  // exercise is one movement, and the API carries it here so this page stays
+  // the single request it has always been (W2).
+  const loading = loadingOf(performed)
 
   return (
     <li className="performed">
@@ -67,7 +93,9 @@ function PerformedExercise({ performed, index }) {
                 <th scope="row">{setIndex + 1}</th>
                 {columns.map((column) => (
                   // An empty cell means this set did not record that measure.
-                  <td key={column.key}>{set[column.key] ?? '—'}</td>
+                  <td key={column.key}>
+                    {column.key === 'weight_kg' ? weightCell(set, loading) : set[column.key] ?? '—'}
+                  </td>
                 ))}
               </tr>
             ))}

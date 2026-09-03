@@ -1,5 +1,6 @@
 import uuid
 from datetime import timedelta
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.db import connection
@@ -514,3 +515,157 @@ class PerformedExerciseHistoryTests(APITestCase):
         with CaptureQueriesContext(connection) as three_rows:
             self.assertEqual(len(self.history().data), 3)
         self.assertEqual(len(three_rows), len(one_row))
+
+
+class PerformedExerciseLoadingTests(APITestCase):
+    """Every performed exercise carries its movement's loading, on every route.
+
+    The session detail page loads only `training-sessions/<id>/` and has no catalogue
+    in hand, so the two numbers ride along beside `exercise_name` for the reason that
+    field's own docstring gives. Being on the base serializer, one addition reaches the
+    plain list, the session detail and the zone's history at once.
+
+    Nothing is computed: `weight_kg` is the total, as it always was, and the per-side
+    arithmetic is the frontend's (W2, AGREED 3).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.user = User.objects.create_user('lifter', password='pw')
+
+        cls.deadlift = ExerciseDefinition.objects.create(
+            name='Deadlift', bar_kg=Decimal('20.00'), sides=2
+        )
+        cls.pulldown = ExerciseDefinition.objects.create(
+            name='Lat pulldown', bar_kg=Decimal('0.00'), sides=1
+        )
+        # Never answered: the case the whole display falls back to plain totals on.
+        cls.calf_raise = ExerciseDefinition.objects.create(name='Seated calf raise')
+
+        trained_at = timezone.now() - timedelta(days=1)
+        cls.session = TrainingSession.objects.create(
+            user=cls.user,
+            type='legs',
+            started_at=trained_at,
+            ended_at=trained_at + timedelta(hours=1),
+        )
+        cls.performed_deadlift = PerformedExercise.objects.create(
+            training_session=cls.session, exercise_definition=cls.deadlift
+        )
+        cls.performed_pulldown = PerformedExercise.objects.create(
+            training_session=cls.session, exercise_definition=cls.pulldown
+        )
+        cls.performed_calf_raise = PerformedExercise.objects.create(
+            training_session=cls.session, exercise_definition=cls.calf_raise
+        )
+        PerformedSet.objects.create(
+            performed_exercise=cls.performed_deadlift, weight_kg=Decimal('140.00'), reps=8
+        )
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+    @staticmethod
+    def loading_of(performed_exercises):
+        return {
+            performed['exercise_name']: (
+                performed['exercise_bar_kg'],
+                performed['exercise_sides'],
+            )
+            for performed in performed_exercises
+        }
+
+    EXPECTED = {
+        'Deadlift': ('20.00', 2),
+        'Lat pulldown': ('0.00', 1),
+        # Unset stays unset, and rendering it raises nothing.
+        'Seated calf raise': (None, None),
+    }
+
+    def test_the_plain_list_carries_the_loading(self):
+        response = self.client.get(reverse('api:performedexercise-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.loading_of(response.data['results']), self.EXPECTED)
+
+    def test_the_session_detail_carries_it_on_every_nested_exercise(self):
+        response = self.client.get(
+            reverse('api:trainingsession-detail', args=[self.session.pk])
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            self.loading_of(response.data['performed_exercises']), self.EXPECTED
+        )
+
+    def test_the_history_endpoint_carries_it_too(self):
+        response = self.client.get(
+            reverse('api:performedexercise-history'),
+            {'exercise_definition': str(self.deadlift.pk)},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['exercise_bar_kg'], '20.00')
+        self.assertEqual(response.data[0]['exercise_sides'], 2)
+
+    def test_an_unanswered_movement_is_null_on_the_history_endpoint(self):
+        response = self.client.get(
+            reverse('api:performedexercise-history'),
+            {'exercise_definition': str(self.calf_raise.pk)},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data[0]['exercise_bar_kg'])
+        self.assertIsNone(response.data[0]['exercise_sides'])
+
+    def test_the_set_itself_is_untouched(self):
+        """`weight_kg` is the total and nothing beside it is stored or sent (AGREED 3)."""
+        response = self.client.get(
+            reverse('api:trainingsession-detail', args=[self.session.pk])
+        )
+        performed = response.data['performed_exercises'][0]
+        [logged] = performed['performed_sets']
+        self.assertEqual(logged['weight_kg'], '140.00')
+        self.assertEqual(
+            set(logged),
+            {
+                'id',
+                'performed_exercise',
+                'weight_kg',
+                'reps',
+                'distance_m',
+                'duration_s',
+                'rpe',
+                'created_at',
+            },
+        )
+
+    def test_the_loading_is_read_only_on_a_performed_exercise(self):
+        """The loading belongs to the catalogue entry; this route cannot move it."""
+        response = self.client.post(
+            reverse('api:performedexercise-list'),
+            {
+                'training_session': str(self.session.pk),
+                'exercise_definition': str(self.calf_raise.pk),
+                'exercise_bar_kg': '25.00',
+                'exercise_sides': 2,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(response.data['exercise_bar_kg'])
+        self.calf_raise.refresh_from_db()
+        self.assertIsNone(self.calf_raise.bar_kg)
+        self.assertIsNone(self.calf_raise.sides)
+
+    def test_the_query_count_does_not_grow_with_the_exercises(self):
+        """The catalogue row was already being followed for the name (step 5)."""
+        with CaptureQueriesContext(connection) as queries:
+            self.client.get(reverse('api:trainingsession-detail', args=[self.session.pk]))
+        before = len(queries)
+        for name in ('Hip thrust', 'Leg press', 'Walking lunge'):
+            PerformedExercise.objects.create(
+                training_session=self.session,
+                exercise_definition=ExerciseDefinition.objects.create(name=name),
+            )
+        with CaptureQueriesContext(connection) as queries:
+            self.client.get(reverse('api:trainingsession-detail', args=[self.session.pk]))
+        self.assertEqual(len(queries), before)

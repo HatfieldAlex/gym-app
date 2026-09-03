@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 
-import { api } from '../api.js'
+import { ApiError, api } from '../api.js'
 import AddExerciseForm, { insertByName } from '../components/AddExerciseForm.jsx'
+import LoadingFields, { EMPTY_LOADING, loadingAnswered } from '../components/LoadingFields.jsx'
 import Status from '../components/Status.jsx'
+import Worked from '../components/Worked.jsx'
 import { useDocumentTitle, useLoad } from '../hooks.js'
+import { entryPrefix, loadingOf, perSide, setParts, setSummary, totalFrom, weightText } from '../sets.js'
 
 /** The dropdown's last option: not an exercise, but the way to add one.
  *
@@ -15,17 +18,27 @@ import { useDocumentTitle, useLoad } from '../hooks.js'
  */
 const ADD_NEW = 'new'
 
-/** One set as a single line: "60 kg × 8", or "8 reps" when it carried no weight.
+/** Whether a catalogue row has ever said how it is loaded.
  *
- * `weight_kg` arrives as a decimal string — "60.00" — so it goes through
- * `Number` to read as it was typed. A set that recorded no weight is a
- * bodyweight set, not a set missing a value: it says so in words rather than
- * showing `null`, `0 kg` or a dash.
+ * Both columns or neither (W1) — the database says so in
+ * `exercisedef_loading_both_or_neither` — and this asks about both anyway, for
+ * the reason `sets.js` gives where it asks the same question: a reader that
+ * tests one is a reader that renders `undefined` the day the other goes missing.
+ *
+ * It is here rather than imported because `sets.js` asks it privately, on the
+ * way to deciding how a set *reads*, and this page asks it about something else
+ * entirely — whether there is a question to put to the user. Neither of those is
+ * the other's rule, and the shape of "unset" they share is one line of `!= null`
+ * rather than an arithmetic rule with a home. Nothing here formats, divides or
+ * multiplies anything; all of that stays in `sets.js`.
  */
-function setSummary(set) {
-  const weight = set.weight_kg === null ? null : `${Number(set.weight_kg)} kg`
-  if (set.reps === null) return weight ?? ''
-  return weight === null ? `${set.reps} reps` : `${weight} × ${set.reps}`
+function loadingKnown(exercise) {
+  return (
+    exercise.bar_kg !== null &&
+    exercise.bar_kg !== undefined &&
+    exercise.sides !== null &&
+    exercise.sides !== undefined
+  )
 }
 
 /** When a past session was trained: "5 Aug".
@@ -58,8 +71,13 @@ function SessionDate({ at }) {
  * which can be missing when one workout ran longer than the other. `lastTime`
  * absent altogether means there is no such column — Completed exercises passes
  * nothing and renders exactly as it did.
+ *
+ * `loading` is how the movement is loaded, and one value serves both cells:
+ * last time's set and this session's are the same movement by construction —
+ * the comparison would mean nothing otherwise — so there is deliberately not a
+ * second loading for the second column.
  */
-function SetRow({ set, number, scope, rows, lastTime }) {
+function SetRow({ set, number, scope, rows, lastTime, loading }) {
   // A row this session has not reached yet has no set to act on, so it has no
   // row identity either: nothing can be opened, armed or failed on it.
   const row = set === null ? null : `${scope}:${set.id}`
@@ -78,7 +96,7 @@ function SetRow({ set, number, scope, rows, lastTime }) {
         // whichever side stopped: a dash is an absence, not a value, and 05
         // reads it at a different weight from the numbers around it.
         <span className="set-last" data-none={lastTime === null ? '' : undefined}>
-          {lastTime === null ? '—' : setSummary(lastTime)}
+          {lastTime === null ? '—' : <Worked {...setParts(lastTime, loading)} />}
         </span>
       )}
 
@@ -93,6 +111,11 @@ function SetRow({ set, number, scope, rows, lastTime }) {
         // the same set, being corrected, not a form standing in for it. The
         // boxes are labelled for a screen reader only — a visible label per box
         // would push the row onto a second line at phone width.
+        //
+        // The same 375px is why nothing of the zone's log form comes with the
+        // per-side box: no `20 + 2 ×` beside it and no live total to its right
+        // (05). The set says the whole expression again the moment Save closes
+        // the row, which is where it was saying it before Edit was tapped.
         <form
           className="edit-set"
           onSubmit={(submitEvent) => {
@@ -100,8 +123,12 @@ function SetRow({ set, number, scope, rows, lastTime }) {
             rows.save(row, set)
           }}
         >
+          {/* The label is the only thing that can say what this box holds:
+              the number means one side on a movement with an expression and the
+              whole total on every other, and with no room for the arithmetic
+              beside it a screen reader is all that will say which. */}
           <input
-            aria-label="Weight (kg)"
+            aria-label={rows.perSideBox ? 'Weight per side (kg)' : 'Weight (kg)'}
             type="number"
             inputMode="decimal"
             step="any"
@@ -130,12 +157,21 @@ function SetRow({ set, number, scope, rows, lastTime }) {
         </form>
       ) : (
         <>
-          <span className="set-measures">{setSummary(set)}</span>
+          {/* The working a step behind the answer, so a row still reads as
+              `140 kg × 8` at a glance and tells you what was on the bar when
+              looked at properly. The cut is `sets.js`'s; the two tiers are the
+              log form's own, worn by the same classes. */}
+          <span className="set-measures">
+            <Worked {...setParts(set, loading)} />
+          </span>
           <span className="set-actions">
             <button
               className="set-action"
               type="button"
-              onClick={() => rows.edit(row, set)}
+              // The row's own movement goes with it: the box is seeded from
+              // the line this row was showing, which was rendered from exactly
+              // this loading.
+              onClick={() => rows.edit(row, set, loading)}
               disabled={rows.busy}
             >
               Edit
@@ -184,8 +220,11 @@ function SetRow({ set, number, scope, rows, lastTime }) {
  * per set number* rather than two lists side by side, and it runs as far as
  * whichever workout ran longer: set 2 sits beside set 2, and a set number with
  * no counterpart shows a dash on that side.
+ *
+ * `loading` is how this list's movement is loaded, handed straight down to every
+ * row: one list is one exercise, so one loading covers all of it.
  */
-function SetList({ sets, scope, rows, lastTime }) {
+function SetList({ sets, scope, rows, lastTime, loading }) {
   const previous = lastTime ?? []
   const length = Math.max(sets.length, previous.length)
   if (length === 0) return <p>No sets logged yet.</p>
@@ -205,6 +244,7 @@ function SetList({ sets, scope, rows, lastTime }) {
             scope={scope}
             rows={rows}
             lastTime={lastTime === undefined ? undefined : (previous[index] ?? null)}
+            loading={loading}
           />
         )
       })}
@@ -212,22 +252,250 @@ function SetList({ sets, scope, rows, lastTime }) {
   )
 }
 
+/** The one box a weight is typed into, and the movement's own arithmetic around it.
+ *
+ * The point of the whole feature: the number typed stops being the number that
+ * had to be worked out. On a barbell the box takes **one side** and the form
+ * finishes the sentence itself —
+ *
+ *     20 + 2 × [ 60 ]  = 140 kg
+ *
+ * — with `20` and `2 ×` standing there as plain text, because they are facts
+ * about the movement, fixed when it was added, and there is no edit path to them
+ * from here or anywhere (AGREED 2). Nothing in the row is focusable or tappable
+ * but the box.
+ *
+ * Three shapes, and `entryPrefix` decides between them so that this form and the
+ * lines the sets are read back on can never disagree:
+ *
+ * | The movement          | The row                                    |
+ * |-----------------------|--------------------------------------------|
+ * | not configured        | `Weight (kg)`, one plain box — as today    |
+ * | `bar_kg` 0, `sides` 1 | `Weight (kg)`, one plain box — as today    |
+ * | `sides` 1, bar > 0    | `Weight per side (kg)`: `25 +` box `= 85 kg`  |
+ * | `sides` 2             | `Weight per side (kg)`: `20 + 2 ×` box `= 140 kg` |
+ *
+ * A movement nobody has answered keeps the plain box and is asked nothing:
+ * unknown is not zero (AGREED 5), and asking is chunk 07.
+ *
+ * The visible `<label>` stays in all three — it is how every other box on this
+ * page is labelled and it is what a screen reader reads. Only its words change.
+ */
+function WeightEntry({ loading, value, onChange }) {
+  const box = (
+    <input
+      id="set-weight"
+      type="number"
+      // The decimal keypad on a phone: plates come in halves — more so per side,
+      // where the 2.5 kg plate on each end is 1.25 of the total.
+      inputMode="decimal"
+      step="any"
+      min="0"
+      // Blank is a bodyweight set, so this one is never required.
+      placeholder="—"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  )
+
+  const prefix = entryPrefix(loading)
+  if (prefix === null) {
+    return (
+      <p>
+        <label htmlFor="set-weight">Weight (kg)</label>
+        {box}
+      </p>
+    )
+  }
+
+  // Recomputed from the box on every keystroke. `null` while it is blank or
+  // half-typed, and then the right-hand side is simply empty: no `= 0 kg` and no
+  // dash, because there is no total yet to claim. A blank box still logs a
+  // bodyweight set exactly as it always did (W9) — it just has nothing to show.
+  const total = totalFrom(value, loading)
+
+  return (
+    <p className="per-side">
+      <label htmlFor="set-weight">Weight per side (kg)</label>
+      <span className="per-side-row">
+        <span className="per-side-fixed">{prefix}</span>
+        {box}
+        {/* The total on its own: passing no loading is "no expression", which is
+            right here because the expression is already spelled out to the left
+            of the box. It reads exactly as the set will once it is logged. */}
+        <span className="per-side-total">
+          {total === null ? '' : `= ${weightText(total, null)}`}
+        </span>
+      </span>
+    </p>
+  )
+}
+
+/** The one question the app asks about a movement nobody ever answered.
+ *
+ * Every entry added since this feature landed carries its own bar and side count
+ * (06), and the migration answered every movement it recognised. What is left is
+ * the handful the app genuinely knows nothing about — and the place that comes
+ * up is here, standing in front of the machine, about to log the first set into
+ * it. So this is where it is asked, and nowhere else: no banner, no catalogue
+ * page, no settings screen.
+ *
+ * It stands **in place of** the log form rather than beside it, because the box
+ * it replaces would otherwise be asking for a number whose meaning has not been
+ * settled yet. Everything under it — last time, the comparison, the Earlier
+ * lines — stays exactly where it was: that is the most useful thing on the
+ * screen while somebody works out what the bar weighs.
+ *
+ * The fields are `LoadingFields`, the same two questions in the same words the
+ * add form asks (06), because they are the same two questions — and the note
+ * under them says the answer is permanent, because it is: there is no edit path
+ * to a loading from here or from anywhere (AGREED 2).
+ *
+ * **And it can be declined, in one tap.** That is the one thing this panel must
+ * not get wrong. The question is a convenience the app is asking for; it is not
+ * a toll on the way to logging a set, and nothing may stand between somebody and
+ * their workout — the whole reason this feature exists is not wanting to think
+ * in the gym. So "Not sure" drops straight to the plain total box this movement
+ * has always had, and the set is logged exactly as it is logged today.
+ *
+ * Declining **stores nothing**. No flag, no dismissal, no "do not ask again":
+ * the row stays unanswered, and the question comes back the next time the
+ * movement is held. That is the entire cost of skipping it, and the entire
+ * mechanism — it is one boolean belonging to this hold, dropped with everything
+ * else in `releaseExercise`. It is also why declining takes nothing away from
+ * "set once, then fixed forever": a skip writes no value, so a loading still
+ * only ever goes unknown -> known (AGREED 2, AGREED 5, W6).
+ *
+ * Change exercise sits here for the same reason it sits on the log form: there
+ * is never a state with an exercise held and no visible way back to the
+ * dropdown, and a mis-tap must not need the zone closed to undo.
+ */
+function AskLoading({ value, onChange, onSave, onSkip, onRelease, busy, failure }) {
+  return (
+    <section className="ask-loading">
+      <h3>How is this loaded?</h3>
+      {/* One sentence, and it is the *why*: a question that appears out of
+          nowhere in front of somebody mid-workout has to say what prompted it.
+          That the answer is permanent is said under the boxes instead, by
+          `LoadingFields`' own note — the same words the add form uses, which is
+          the entire reason that note lives in the shared component. Saying it
+          twice on one panel would make it nag, and this panel must not nag. */}
+      <p className="ask-loading-why">The app does not know how this one loads yet.</p>
+
+      <form
+        onSubmit={(submitEvent) => {
+          submitEvent.preventDefault()
+          onSave()
+        }}
+      >
+        <div className="ask-loading-fields">
+          {/* Frozen while the request is in flight, unlike the add form's pair:
+              there is no name box here to keep live beside them, and a save that
+              lands while the answer is being changed would store the old one. */}
+          <LoadingFields value={value} onChange={onChange} disabled={busy} />
+        </div>
+
+        <div className="ask-loading-actions">
+          <button
+            className="button button--tap"
+            type="submit"
+            disabled={!loadingAnswered(value) || busy}
+          >
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          {/* The way past the question, and it is one tap from here to a logged
+              set. Quiet, because it is the lesser answer — the app learns
+              nothing and asks again next time — but plainly offered and worded
+              as a choice rather than as a failure to have one. It is not a
+              submit: nothing is sent, nothing is stored, and there is nothing
+              to go wrong with it. */}
+          <button className="skip-loading" type="button" onClick={onSkip} disabled={busy}>
+            Not sure — just log the total
+          </button>
+          <button className="change-exercise" type="button" onClick={onRelease} disabled={busy}>
+            Change exercise
+          </button>
+        </div>
+
+        {/* Under the button that was tapped, with both answers still in the
+            boxes: the movement is still unanswered, so the question is still
+            there to answer. */}
+        {failure && (
+          <p className="status" data-state="error">
+            {failure}
+          </p>
+        )}
+      </form>
+    </section>
+  )
+}
+
 /** The typed entry as the API wants it, or `null` when it is not a set yet.
  *
  * Reps are required and whole and positive (A5) — a set of `0` or `-3` records
- * nothing. Weight is optional, because bodyweight movements have none, and a
- * blank one is `null` rather than `0`: no weight is not zero weight. What was
- * typed is passed through as the string it was typed as, so `62.5` reaches a
- * decimal column without a float rounding it first.
+ * nothing.
+ *
+ * Weight is optional, because bodyweight movements have none, and a **blank box
+ * is `null` rather than `0`**: no weight is not zero weight. That still holds on
+ * a movement with a 20 kg bar, where the temptation to read an empty box as
+ * "just the bar" is real — it would write down a set nobody did (W9). A blank
+ * box logs a bodyweight set on deadlift exactly as it does on pull ups.
+ *
+ * `loading` is how the held movement is loaded — `{ bar_kg, sides }`, which a
+ * catalogue row already is. When it says nothing, or says `0 / 1`, the box holds
+ * the total and its string is passed straight through, so `62.5` reaches a
+ * decimal column without a float rounding it first: unchanged behaviour, and
+ * `totalFrom` keeps it that way. Otherwise the box holds one side and the total
+ * is `bar_kg + sides × it`, computed in `sets.js` and sent as `"140.00"`. The
+ * components themselves are never sent: `weight_kg` is the whole record of a set
+ * and stays the only thing stored (AGREED 3).
  */
-function parseEntry(weight, reps) {
+function parseEntry(weight, reps, loading) {
   if (!/^\d+$/.test(reps.trim()) || Number(reps) < 1) return null
 
   const typedWeight = weight.trim()
   if (typedWeight === '') return { weight_kg: null, reps: Number(reps) }
-  // A half-typed weight is a mistake, not a bodyweight set.
-  if (!/^\d+(\.\d+)?$/.test(typedWeight)) return null
-  return { weight_kg: typedWeight, reps: Number(reps) }
+  // A half-typed weight is a mistake, not a bodyweight set — and so is a per
+  // side that makes a total finer than the column can hold.
+  const total = totalFrom(typedWeight, loading)
+  if (total === null) return null
+  return { weight_kg: total, reps: Number(reps) }
+}
+
+/** What a row being corrected puts in its box, and what that number means.
+ *
+ * One rule decides all of it: **the box edits whatever the row was showing.**
+ * A row reading `20 + 2 × 60 = 140 kg` opens holding `60`, typed per side; a row
+ * reading a plain `50 kg` opens holding `50`, typed as a total, exactly as every
+ * box on this page did before. Never a box whose number means something the line
+ * above it did not say.
+ *
+ * That one sentence is also the whole of the awkward cases, which is why none of
+ * them has a branch here. `entryPrefix` and `perSide` have already made this
+ * decision once, for the line the row rendered, so asking them again is what
+ * keeps the two answers the same answer — a `0 / 1` stack, a movement nobody has
+ * configured, a total lighter than its own bar and a total that will not divide
+ * all say "there is no expression" to one of them, and all get today's box back.
+ *
+ * The `loading` handed back is the one `parseEntry` is given, so `null` there is
+ * literally "this box holds the total": the string it was typed as goes to the
+ * API untouched, which is the behaviour those rows have always had.
+ *
+ * A set that carried no weight opens with an empty box whatever the movement is
+ * (W9), and leaving it empty leaves it a bodyweight set — but on a configured
+ * movement it is still a *per side* box, because that is the box that movement
+ * is logged in, and a number typed into it has to mean the same thing in both
+ * places.
+ *
+ * This function and its three call sites are the whole of AGREED 9, which is an
+ * assumption rather than something asked for. Seeding
+ * `String(Number(set.weight_kg))` with a `null` loading is this chunk undone.
+ */
+function editedIn(set, loading) {
+  const side = set.weight_kg === null ? '' : perSide(set.weight_kg, loading)
+  if (side !== null && entryPrefix(loading) !== null) return { value: side, loading }
+  // Through Number so a decimal column's "60.00" reads back as it was typed.
+  return { value: set.weight_kg === null ? '' : String(Number(set.weight_kg)), loading: null }
 }
 
 /** The session with one set's stored values swapped for the ones just saved. */
@@ -293,9 +561,25 @@ function useSetRows(setSession) {
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState(null)
 
+  // What the open row's box is typed in — `{ row, loading }`, or nothing open.
+  // A `null` loading in it means the box holds a plain total, which is what
+  // `editedIn` seeds for every row without an expression.
+  //
+  // It has to be state, and it has to be carried per row: one hook serves both
+  // lists, so the rows it can be asked about are not all the same movement, and
+  // a loading left over from the last row opened would be a per-side box on the
+  // wrong exercise. The row travels beside it so it is dropped with the rest of
+  // that row's state, the way `failure` already is.
+  const [typedIn, setTypedIn] = useState(null)
+
   // The same rule as logging a set, from the same function: reps required and
   // positive, a blank weight meaning bodyweight rather than zero (A5).
-  const entry = parseEntry(weight, reps)
+  //
+  // On a row being corrected per side, the loading is what multiplies the box
+  // back up into the total that is sent — the exact inverse of the division
+  // `edit` seeded it with. On every other row it is `null`, and the string that
+  // was typed goes through untouched, exactly as it always has.
+  const entry = parseEntry(weight, reps, typedIn?.loading ?? null)
 
   // Acting elsewhere disarms a delete, and on a touch screen most of "elsewhere"
   // is not focusable, so no blur reports it. While a row is armed, the next
@@ -311,11 +595,18 @@ function useSetRows(setSession) {
     return () => document.removeEventListener('pointerdown', disarmElsewhere)
   }, [armed])
 
-  /** Open a row, seeded with what is stored — closing whatever was open. */
-  function edit(row, set) {
+  /** Open a row, seeded with what it was showing — closing whatever was open.
+   *
+   * `loading` is the movement the row belongs to, handed in by `SetRow` from the
+   * same prop its line was rendered from. `editedIn` turns the two into the
+   * number that goes in the box and what that number means; nothing here needs
+   * to know which of them it got.
+   */
+  function edit(row, set, loading) {
+    const box = editedIn(set, loading)
     setOpen(row)
-    // Through Number so a decimal column's "60.00" reads back as it was typed.
-    setWeight(set.weight_kg === null ? '' : String(Number(set.weight_kg)))
+    setTypedIn({ row, loading: box.loading })
+    setWeight(box.value)
     setReps(set.reps === null ? '' : String(set.reps))
     setArmed(null)
     setFailure(null)
@@ -324,6 +615,7 @@ function useSetRows(setSession) {
   /** Put the row back as it was. Nothing was sent, so there is nothing to undo. */
   function cancel() {
     setOpen(null)
+    setTypedIn(null)
     setFailure(null)
   }
 
@@ -338,6 +630,7 @@ function useSetRows(setSession) {
       const saved = await api.patch(`performed-sets/${set.id}/`, entry)
       setSession((current) => withSetReplaced(current, saved))
       setOpen(null)
+      setTypedIn(null)
     } catch (failed) {
       console.error(failed)
       // The row stays open with what was typed still in it, ready to retry.
@@ -382,6 +675,7 @@ function useSetRows(setSession) {
   function close(scope) {
     const inScope = (row) => row?.startsWith(`${scope}:`)
     setOpen((current) => (inScope(current) ? null : current))
+    setTypedIn((current) => (inScope(current?.row) ? null : current))
     setArmed((current) => (inScope(current) ? null : current))
     setFailure((current) => (inScope(current?.row) ? null : current))
   }
@@ -391,6 +685,10 @@ function useSetRows(setSession) {
     armed,
     weight,
     setWeight,
+    // Which of the two things the weight box holds, for the label that is the
+    // only place it is said out loud. True exactly when `editedIn` kept a
+    // loading, i.e. when the row it opened was showing an expression.
+    perSideBox: Boolean(typedIn?.loading),
     reps,
     setReps,
     entry,
@@ -418,7 +716,16 @@ function PerformedExercise({ performed, index, rows }) {
         {index}. {performed.exercise_name}
       </h3>
 
-      <SetList sets={performed.performed_sets} scope="completed" rows={rows} />
+      {/* The catalogue is not consulted here, and this page's copy of it is not
+          read either: chunk 02 hung the loading on the performed exercise so
+          that a list of many different movements can show each one's own
+          arithmetic without a lookup per row. */}
+      <SetList
+        sets={performed.performed_sets}
+        scope="completed"
+        rows={rows}
+        loading={loadingOf(performed)}
+      />
     </li>
   )
 }
@@ -504,6 +811,35 @@ export default function CurrentSession() {
   // dropped with the exercise, in `releaseExercise`.
   const [alreadyThere, setAlreadyThere] = useState(null)
 
+  // The typed-but-unsent answer to "how is this loaded?" for a movement that has
+  // never said (07). Blank and never defaulted, for the reason `LoadingFields`
+  // gives: the answer cannot be corrected afterwards, so a default is a wrong
+  // answer nobody typed. It belongs to this hold and is dropped with it.
+  const [loadingAnswer, setLoadingAnswer] = useState(EMPTY_LOADING)
+  const [savingLoading, setSavingLoading] = useState(false)
+  const [loadingError, setLoadingError] = useState(null)
+  // Somebody answered it first — another tab, another phone — and this hold took
+  // their answer. A quiet line rather than an error, for the same reason
+  // `alreadyThere` is one: nothing went wrong.
+  const [loadingRaced, setLoadingRaced] = useState(false)
+  // The question, declined — for this hold and only for this hold.
+  //
+  // Transient by design, and transient is the only design allowed here: it
+  // stores nothing, sends nothing and is written nowhere, so the catalogue row
+  // stays unanswered and the question comes back the next time that movement is
+  // picked up. There is deliberately no "do not ask again" and no dismissal
+  // record. A skip is somebody saying "not now", which is a different sentence
+  // from "never", and the only way to say the second one is to answer.
+  const [loadingSkipped, setLoadingSkipped] = useState(false)
+
+  // The zone's fourth state: holding a movement that has never said how it is
+  // loaded, and asking. Not a fourth sibling of dropdown/adding/holding — it is
+  // a state *of* holding, so the heading is still the movement's name and the ×
+  // still closes the zone; what it replaces is the log form. Declining puts the
+  // log form back for the rest of this hold, with the plain total box every
+  // unanswered movement has always had and no further mention of the question.
+  const asking = held !== null && !loadingKnown(held) && !loadingSkipped
+
   // Whether the page is the zone. One boolean is the whole mechanism (Z4):
   // recording a movement is a state of this tab, not a destination, so there is
   // no route, no query parameter, no history entry and nothing persisted — a
@@ -555,7 +891,11 @@ export default function CurrentSession() {
   // clears it, since what was typed belonged to that movement.
   const [weight, setWeight] = useState('')
   const [reps, setReps] = useState('')
-  const entry = parseEntry(weight, reps)
+  // `held` is a catalogue row, which carries `bar_kg` and `sides` itself, so it
+  // is a loading as it stands. On a configured movement the box holds one side
+  // and this is where it becomes the total that is sent; on every other one it
+  // holds the total, as it always did.
+  const entry = parseEntry(weight, reps, held)
 
   const [logging, setLogging] = useState(false)
   const [logError, setLogError] = useState(null)
@@ -627,13 +967,103 @@ export default function CurrentSession() {
         ),
       }))
       // Weight and reps stay as they are: another set of the same thing is the
-      // common case, and it should cost one tap.
+      // common case, and it should cost one tap. On a configured movement what
+      // stays is the per-side number, which is the one most likely to be right
+      // for the next set.
     } catch (failure) {
       console.error(failure)
       setLogError('Could not log that set. Please try again.')
     } finally {
       setLogging(false)
     }
+  }
+
+  /** An answered catalogue row into the page's list, however it came to be answered.
+   *
+   * `held` is looked up in `catalogue` (above), so swapping one row is the whole
+   * of the re-render: `asking` goes false and the zone comes back as the
+   * ordinary holding state, with the per-side form (04) already knowing what to
+   * do with what is typed into it. Nothing is navigated and `exercises/` is not
+   * read again — the response *is* the row (N11).
+   *
+   * The answer belongs to the catalogue and not to this workout: no
+   * `PerformedExercise` is created, no set is logged, and a movement answered
+   * and then let go of leaves the session exactly as it was. What changed is one
+   * catalogue row, and it changed for everybody.
+   */
+  function foldLoading(answered) {
+    setCatalogue((list) => list.map((entry) => (entry.id === answered.id ? answered : entry)))
+    setLoadingAnswer(EMPTY_LOADING)
+    setLoadingError(null)
+  }
+
+  /** Answer the question, once and for all: `POST exercises/<id>/loading/`.
+   *
+   * A one-way door on both sides of the wire. The endpoint refuses a row that
+   * already carries an answer, and this is the only place the client ever asks
+   * it: a loading goes unknown -> known and never known -> different (AGREED 2,
+   * W6). There is no edit path here to write, and none to add later.
+   *
+   * The 409 is the interesting case, and it is **not** a failure: it means
+   * somebody answered this movement first, in another tab or on another phone,
+   * and the body carries the row they wrote. That is an answer, so it is folded
+   * in exactly as a 200 would be and the workout carries on. It is never
+   * retried, never overwritten and never offered as a choice — their answer is
+   * as final as ours would have been.
+   */
+  async function saveLoading() {
+    if (!loadingAnswered(loadingAnswer) || savingLoading) return
+
+    setSavingLoading(true)
+    setLoadingError(null)
+    try {
+      const answered = await api.post(`exercises/${heldId}/loading/`, {
+        // The bar as the string it was typed as, so a decimal column never sees
+        // a float; the side count as the number the API asks for, off a control
+        // that can only ever hold "1" or "2".
+        bar_kg: loadingAnswer.bar_kg,
+        sides: Number(loadingAnswer.sides),
+      })
+      foldLoading(answered)
+    } catch (failure) {
+      const settled =
+        failure instanceof ApiError && failure.status === 409
+          ? (failure.data?.exercise ?? null)
+          : null
+      if (settled) {
+        setLoadingRaced(true)
+        foldLoading(settled)
+        return
+      }
+      console.error(failure)
+      // The typed answer stays in the boxes and the movement stays unanswered:
+      // a save that did not arrive changed nothing, here or on the server. The
+      // skip is still sitting there for somebody who would rather not have this
+      // conversation twice.
+      setLoadingError('Could not save that. Please try again.')
+    } finally {
+      setSavingLoading(false)
+    }
+  }
+
+  /** Decline the question, and get on with the workout.
+   *
+   * One tap, no request, nothing written. The log form comes back with the plain
+   * total box this movement has always had, `parseEntry` passes the typed string
+   * through untouched exactly as it did before any of this existed, and the set
+   * is logged the way it is logged today.
+   *
+   * Nothing about the catalogue row changes, which is the point: the app has not
+   * learned anything, so it asks again the next time this movement is held. That
+   * is the whole cost of skipping, and there is no way to make it permanent —
+   * see `loadingSkipped` above for why there must not be one.
+   */
+  function skipLoading() {
+    setLoadingSkipped(true)
+    // What was half-typed went with the question. Coming back to it — by letting
+    // go and holding the movement again — starts from blank.
+    setLoadingAnswer(EMPTY_LOADING)
+    setLoadingError(null)
   }
 
   /** Adding a movement is choosing it: the section goes straight to recording.
@@ -697,6 +1127,14 @@ export default function CurrentSession() {
     // returns to.
     setAlreadyThere(null)
     setAdding(false)
+    // The question and everything about this hold's dealings with it: a
+    // half-typed answer must not be waiting for whoever holds the next movement,
+    // and a declined question is declined for that hold and no longer — letting
+    // go and picking the same movement up again asks it again (07).
+    setLoadingAnswer(EMPTY_LOADING)
+    setLoadingError(null)
+    setLoadingRaced(false)
+    setLoadingSkipped(false)
     // Its list of sets goes with it; the same sets are still below, editable
     // there, and every one of them is still stored.
     rows.close('held')
@@ -854,89 +1292,106 @@ export default function CurrentSession() {
                   <p className="status">{alreadyThere} was already in the catalogue.</p>
                 )}
 
-                <form className="log-set" onSubmit={logSet}>
-                  <p>
-                    <label htmlFor="set-weight">Weight (kg)</label>
-                    <input
-                      id="set-weight"
-                      type="number"
-                      // The decimal keypad on a phone: plates come in halves.
-                      inputMode="decimal"
-                      step="any"
-                      min="0"
-                      // Blank is a bodyweight set, so this one is never required.
-                      placeholder="—"
-                      value={weight}
-                      onChange={(event) => setWeight(event.target.value)}
-                    />
+                {/* Somebody else got to the question first, and their answer is
+                    the one in use — said once, quietly, and only for as long as
+                    this movement is held. Not an error: the movement is answered
+                    now, which is what the question was for. */}
+                {loadingRaced && (
+                  <p className="status">
+                    Somebody had already said how this one loads — that is the answer being used.
                   </p>
-                  <p>
-                    <label htmlFor="set-reps">Reps</label>
-                    <input
-                      id="set-reps"
-                      type="number"
-                      inputMode="numeric"
-                      step="1"
-                      min="1"
-                      value={reps}
-                      onChange={(event) => setReps(event.target.value)}
-                    />
-                  </p>
-                  {/* One tap per set and one tap per movement: the two sizes of
-                      thing this section does. Log set is off until the entry is
-                      a set, and off again while it is being saved, so a second
-                      tap cannot log a second set (A9).
+                )}
 
-                      Change exercise sits beside them whatever has happened, so
-                      there is never a state with an exercise held and no visible
-                      way back to the dropdown. It deletes nothing — no button in
-                      this section does, at any point. Once a set is saved it
-                      stays saved, and a wrong exercise is simply left behind
-                      with whatever was logged into it. */}
-                  <div className="log-set-actions">
-                    <button
-                      className="button button--tap"
-                      type="submit"
-                      disabled={entry === null || logging}
-                    >
-                      {logging ? 'Logging…' : 'Log set'}
-                    </button>
-                    {/* Saves nothing: there is nothing left to save. Do not go
-                        looking for the request. Only once there is a movement to
-                        call finished — before that, Change exercise is the way
-                        out and this would be a disabled button saying nothing. */}
-                    {heldSets.length > 0 && (
+                {asking ? (
+                  /* In place of the boxes, not beside them: a movement nobody
+                     has ever described has no settled meaning for the number
+                     that would go in them (07). Everything below — last time,
+                     the comparison, the Earlier lines — stays exactly where it
+                     is, because that is what somebody is actually reading while
+                     they work out what the bar weighs. */
+                  <AskLoading
+                    value={loadingAnswer}
+                    onChange={setLoadingAnswer}
+                    onSave={saveLoading}
+                    onSkip={skipLoading}
+                    onRelease={releaseExercise}
+                    busy={savingLoading}
+                    failure={loadingError}
+                  />
+                ) : (
+                  <form className="log-set" onSubmit={logSet}>
+                    {/* One box, whatever the movement: the total for a stack or an
+                        unanswered movement, one side for a barbell. `held` is a
+                        catalogue row, so it carries its own loading. */}
+                    <WeightEntry loading={held} value={weight} onChange={setWeight} />
+                    <p>
+                      <label htmlFor="set-reps">Reps</label>
+                      <input
+                        id="set-reps"
+                        type="number"
+                        inputMode="numeric"
+                        step="1"
+                        min="1"
+                        value={reps}
+                        onChange={(event) => setReps(event.target.value)}
+                      />
+                    </p>
+                    {/* One tap per set and one tap per movement: the two sizes of
+                        thing this section does. Log set is off until the entry is
+                        a set, and off again while it is being saved, so a second
+                        tap cannot log a second set (A9).
+
+                        Change exercise sits beside them whatever has happened, so
+                        there is never a state with an exercise held and no visible
+                        way back to the dropdown. It deletes nothing — no button in
+                        this section does, at any point. Once a set is saved it
+                        stays saved, and a wrong exercise is simply left behind
+                        with whatever was logged into it. */}
+                    <div className="log-set-actions">
                       <button
-                        className="log-exercise"
+                        className="button button--tap"
+                        type="submit"
+                        disabled={entry === null || logging}
+                      >
+                        {logging ? 'Logging…' : 'Log set'}
+                      </button>
+                      {/* Saves nothing: there is nothing left to save. Do not go
+                          looking for the request. Only once there is a movement to
+                          call finished — before that, Change exercise is the way
+                          out and this would be a disabled button saying nothing. */}
+                      {heldSets.length > 0 && (
+                        <button
+                          className="log-exercise"
+                          type="button"
+                          onClick={closeZone}
+                          disabled={logging}
+                        >
+                          Log exercise
+                        </button>
+                      )}
+                      {/* Nearly the same act as Log exercise — both let go of the
+                          hold — but a different thing to the user, and now a
+                          different destination: this one is "wrong exercise, take
+                          me back", so it stays in the zone and asks again, where
+                          "that movement is done" leaves. */}
+                      <button
+                        className="change-exercise"
                         type="button"
-                        onClick={closeZone}
+                        onClick={releaseExercise}
                         disabled={logging}
                       >
-                        Log exercise
+                        Change exercise
                       </button>
+                    </div>
+                    {/* Beside the buttons, where the tap that failed was: nothing
+                        typed is touched, so the same values are there to retry. */}
+                    {logError && (
+                      <p className="status" data-state="error">
+                        {logError}
+                      </p>
                     )}
-                    {/* Nearly the same act as Log exercise — both let go of the
-                        hold — but a different thing to the user, and now a
-                        different destination: this one is "wrong exercise, take
-                        me back", so it stays in the zone and asks again, where
-                        "that movement is done" leaves. */}
-                    <button
-                      className="change-exercise"
-                      type="button"
-                      onClick={releaseExercise}
-                      disabled={logging}
-                    >
-                      Change exercise
-                    </button>
-                  </div>
-                  {/* Beside the buttons, where the tap that failed was: nothing
-                      typed is touched, so the same values are there to retry. */}
-                  {logError && (
-                    <p className="status" data-state="error">
-                      {logError}
-                    </p>
-                  )}
-                </form>
+                  </form>
+                )}
 
                 {/* Where the user is working, so the answer to "how many have I
                     done, and at what?" is here rather than in the section
@@ -987,6 +1442,9 @@ export default function CurrentSession() {
                     scope="held"
                     rows={rows}
                     lastTime={lastTime === null ? undefined : lastTime.performed_sets}
+                    // The catalogue row already in hand: `bar_kg` and `sides`
+                    // are on it directly, so the zone needs nothing fetched.
+                    loading={held}
                   />
 
                   {/* The two sessions before last time, a line each: the date
@@ -1010,8 +1468,21 @@ export default function CurrentSession() {
                         {earlier.map((performed) => (
                           <li key={performed.id}>
                             <SessionDate at={performed.training_session_started_at} />
+                            {/* One string, deliberately, where the rows above
+                                are two tiers. This block is already the third
+                                and quietest tier — `.earlier-sessions` is dimmer
+                                again than last time's column — and opacity
+                                compounds: stepping the working back inside it
+                                would put it below the weight the dashes are
+                                drawn at, while a bold total would make the line
+                                meant for the corner of the eye the loudest text
+                                in the zone. Six sets comma-joined is also a
+                                sentence rather than a column, with no place the
+                                eye returns to. So it stays a sentence. */}
                             <span>
-                              {performed.performed_sets.map(setSummary).join(', ')}
+                              {performed.performed_sets
+                                .map((set) => setSummary(set, loadingOf(performed)))
+                                .join(', ')}
                             </span>
                           </li>
                         ))}

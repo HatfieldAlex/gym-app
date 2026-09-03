@@ -23,6 +23,8 @@ since DBML has no way to express it.
 Table catalog_exercisedefinition {
   id            uuid         [pk, note: 'default set in Python: uuid.uuid4()']
   name          varchar(120) [not null, unique]
+  bar_kg        numeric(6,2) [null, note: 'weight of the bar, carriage or sled before any plates; null until this movement has been asked about']
+  sides         smallint     [null, note: 'how many sides the typed weight goes on: 2 for a barbell, 1 for a stack or a sled']
   created_by_id integer      [null, ref: > auth_user.id, note: 'on_delete=SET_NULL; who first added this movement; null for the seeded and admin-created rows']
   created_at    timestamptz  [not null, note: 'set to now() on insert (auto_now_add)']
 
@@ -30,7 +32,7 @@ Table catalog_exercisedefinition {
     created_by_id [note: 'implicit: Django indexes every ForeignKey column']
   }
 
-  Note: 'The exercise catalogue: one row per movement, referenced by PerformedExercise.'
+  Note: 'The exercise catalogue: one row per movement, referenced by PerformedExercise. CHECK exercisedef_loading_both_or_neither: ((bar_kg IS NULL AND sides IS NULL) OR (bar_kg IS NOT NULL AND sides IS NOT NULL)) CHECK exercisedef_sides_1_or_2: (sides IS NULL OR (sides >= 1 AND sides <= 2)) CHECK exercisedef_bar_kg_not_negative: (bar_kg IS NULL OR bar_kg >= 0)'
 }
 
 // ==========================================================================

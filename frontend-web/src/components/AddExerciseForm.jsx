@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from 'react'
 
 import { ApiError, api } from '../api.js'
+import LoadingFields, { EMPTY_LOADING, loadingAnswered } from './LoadingFields.jsx'
 
 /** A created entry, straight from the response, into a name-ordered list.
  *
@@ -42,9 +43,19 @@ export function insertByName(list, exercise) {
  * catalogue page passes none, because there is nothing to cancel back to.
  * `onDuplicate` is optional too; without one the form says it itself, so the
  * component is honest wherever it stands.
+ *
+ * It asks three things rather than one now: a movement also carries how it is
+ * loaded, and this is the only place it is ever asked, because there is no edit
+ * path to it afterwards (AGREED 2). The two extra fields and the rule for what
+ * counts as an answer live in `LoadingFields`, shared for the same reason this
+ * form is -- the zone asks the identical question of a movement that predates
+ * the columns (07), and one question asked in two wordings is two questions.
  */
 export default function AddExerciseForm({ onAdded, onDuplicate, onCancel }) {
   const [name, setName] = useState('')
+  // How the movement is loaded, as the two strings the controls hand over.
+  // Blank, and never defaulted: see LoadingFields for why.
+  const [loading, setLoading] = useState(EMPTY_LOADING)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState(null)
   // Only ever set when the caller passed no `onDuplicate`: the entry that
@@ -55,24 +66,34 @@ export default function AddExerciseForm({ onAdded, onDuplicate, onCancel }) {
   const nameId = useId()
   const box = useRef(null)
 
-  // Blank or nothing but spaces is nothing to add. This decides whether the
-  // button is live and never what gets sent: the name travels exactly as typed
-  // and the server is the only place it is normalised (N9). A second, subtly
-  // different rule here is a bug waiting for the day the two disagree.
-  const empty = name.trim() === ''
+  // Blank or nothing but spaces is nothing to add, and a movement whose loading
+  // has not been answered is not addable either -- the answer is permanent, so
+  // the one moment it can be given is this one. This decides whether the button
+  // is live and never what gets sent: the name travels exactly as typed and the
+  // server is the only place it is normalised (N9). A second, subtly different
+  // rule here is a bug waiting for the day the two disagree.
+  const unanswered = name.trim() === '' || !loadingAnswered(loading)
 
   async function submit(submitEvent) {
     submitEvent.preventDefault()
     // Enter in the box can submit while the button is disabled, and a second
     // send while one is running would add nothing but a duplicate (N8).
-    if (empty || busy) return
+    if (unanswered || busy) return
 
     setBusy(true)
     setFailure(null)
     setDuplicate(null)
     try {
-      const created = await api.post('exercises/', { name })
+      // `bar_kg` as the string it was typed as, so a decimal column never sees a
+      // float; `sides` as the number the API asks for, off a control that can
+      // only ever hold "1" or "2".
+      const created = await api.post('exercises/', {
+        name,
+        bar_kg: loading.bar_kg,
+        sides: Number(loading.sides),
+      })
       setName('')
+      setLoading(EMPTY_LOADING)
       // Somebody adding three movements in a row types the next one straight
       // away; the caller may move focus of its own accord afterwards.
       box.current?.focus()
@@ -86,7 +107,14 @@ export default function AddExerciseForm({ onAdded, onDuplicate, onCancel }) {
       if (existing) {
         // Cleared and refocused exactly as a successful add leaves it: there is
         // nothing to retry, because the entry the typed name asked for is here.
+        //
+        // The typed bar and sides go with it, and nothing is said about them.
+        // The entry that exists has its own loading -- or has none yet, in which
+        // case the zone asks about it the first time it is held (07). Applying
+        // what was typed here to that row would be an edit of a value that is
+        // fixed forever (AGREED 2), through the back door.
         setName('')
+        setLoading(EMPTY_LOADING)
         box.current?.focus()
         if (onDuplicate) onDuplicate(existing)
         else setDuplicate(existing)
@@ -127,7 +155,10 @@ export default function AddExerciseForm({ onAdded, onDuplicate, onCancel }) {
           onChange={(event) => setName(event.target.value)}
         />
       </p>
-      <button className="button" type="submit" disabled={empty || busy}>
+      {/* Enabled while a request is in flight, for the same reason the name box
+          is: a slow POST must not eat an answer being corrected. */}
+      <LoadingFields value={loading} onChange={setLoading} />
+      <button className="button" type="submit" disabled={unanswered || busy}>
         {busy ? 'Adding…' : 'Add'}
       </button>
       {onCancel && (

@@ -14,6 +14,7 @@ import math
 import random
 import uuid
 from datetime import timedelta
+from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -43,42 +44,54 @@ from protocols.models import ExercisePrescription
 # The numbers are a starting point for a notional intermediate lifter; every
 # athlete gets their own multiplier on top, so two seeded users never look like
 # the same person.
+#
+# `loading` is the catalogue's own (bar_kg, sides) — how the movement is loaded,
+# so the app can add a total up from the one number you type per side. The values
+# are the agreed backfill table (specs/split_weight_components/AGREED.md), the
+# same ones catalog migration 0004_backfill_loading writes; they live here too
+# because a fresh checkout migrates before it seeds, so 0004 runs against an
+# empty catalogue and only this file can give the seeded rows their loading.
+# Keep the two in step.
+#
+# `None` means nobody has answered yet — NOT zero. `seated calf raise` and
+# `walking lunge` are deliberately left unset: they are the two the human never
+# specified, and an unset row is what exercises the zone's ask-once flow.
 EXERCISES = [
-    # name, group, kind, extra
-    ('squats', 'strength', 'loaded', {'base_kg': 90, 'reps': (4, 8), 'weekly_kg': 1.5}),
-    ('front squat', 'strength', 'loaded', {'base_kg': 70, 'reps': (4, 8), 'weekly_kg': 1.0}),
-    ('deadlift', 'strength', 'loaded', {'base_kg': 110, 'reps': (3, 6), 'weekly_kg': 2.0}),
-    ('romanian deadlift', 'strength', 'loaded', {'base_kg': 80, 'reps': (6, 10), 'weekly_kg': 1.25}),
-    ('bench press', 'strength', 'loaded', {'base_kg': 65, 'reps': (5, 10), 'weekly_kg': 1.0}),
-    ('incline dumbbell press', 'strength', 'loaded', {'base_kg': 24, 'reps': (8, 12), 'weekly_kg': 0.5}),
-    ('overhead press', 'strength', 'loaded', {'base_kg': 40, 'reps': (5, 8), 'weekly_kg': 0.75}),
-    ('barbell row', 'strength', 'loaded', {'base_kg': 60, 'reps': (6, 10), 'weekly_kg': 1.0}),
-    ('seated cable row', 'strength', 'loaded', {'base_kg': 55, 'reps': (8, 12), 'weekly_kg': 0.75}),
-    ('lat pulldown', 'strength', 'loaded', {'base_kg': 50, 'reps': (8, 12), 'weekly_kg': 0.75}),
-    ('leg press', 'strength', 'loaded', {'base_kg': 140, 'reps': (8, 15), 'weekly_kg': 2.5}),
-    ('hip thrust', 'strength', 'loaded', {'base_kg': 85, 'reps': (8, 12), 'weekly_kg': 1.5}),
-    ('barbell curl', 'strength', 'loaded', {'base_kg': 30, 'reps': (8, 12), 'weekly_kg': 0.5}),
-    ('cable tricep pushdown', 'strength', 'loaded', {'base_kg': 28, 'reps': (10, 15), 'weekly_kg': 0.5}),
-    ('dumbbell lateral raise', 'strength', 'loaded', {'base_kg': 10, 'reps': (10, 15), 'weekly_kg': 0.25}),
-    ('face pull', 'strength', 'loaded', {'base_kg': 22, 'reps': (12, 20), 'weekly_kg': 0.25}),
-    ('seated calf raise', 'strength', 'loaded', {'base_kg': 45, 'reps': (10, 15), 'weekly_kg': 1.0}),
-    ('walking lunge', 'strength', 'loaded', {'base_kg': 20, 'reps': (8, 14), 'weekly_kg': 0.5}),
-    ('pull ups', 'strength', 'bodyweight', {'reps': (4, 12)}),
-    ('dips', 'strength', 'bodyweight', {'reps': (5, 14)}),
-    ('hanging leg raise', 'strength', 'bodyweight', {'reps': (6, 15)}),
-    ('outdoor run', 'cardio', 'distance', {'metres': (4000, 14000), 'pace_s_km': (280, 375)}),
-    ('treadmill run', 'cardio', 'distance', {'metres': (3000, 10000), 'pace_s_km': (290, 380)}),
-    ('rowing machine', 'cardio', 'distance', {'metres': (2000, 6000), 'pace_s_km': (200, 260)}),
-    ('stationary bike', 'cardio', 'distance', {'metres': (8000, 25000), 'pace_s_km': (95, 140)}),
-    ('assault bike', 'cardio', 'duration', {'seconds': (300, 1200)}),
-    ('jump rope', 'cardio', 'duration', {'seconds': (120, 480)}),
-    ('plank', 'mobility', 'duration', {'seconds': (30, 150)}),
-    ('couch stretch', 'mobility', 'duration', {'seconds': (45, 120)}),
-    ('pigeon pose', 'mobility', 'duration', {'seconds': (45, 120)}),
-    ('90/90 hip switch', 'mobility', 'duration', {'seconds': (40, 90)}),
-    ('world greatest stretch', 'mobility', 'duration', {'seconds': (40, 90)}),
-    ('thoracic spine opener', 'mobility', 'duration', {'seconds': (30, 90)}),
-    ('shoulder dislocates', 'mobility', 'duration', {'seconds': (30, 75)}),
+    # name, group, kind, extra, loading
+    ('squats', 'strength', 'loaded', {'base_kg': 90, 'reps': (4, 8), 'weekly_kg': 1.5}, (20, 2)),
+    ('front squat', 'strength', 'loaded', {'base_kg': 70, 'reps': (4, 8), 'weekly_kg': 1.0}, (20, 2)),
+    ('deadlift', 'strength', 'loaded', {'base_kg': 110, 'reps': (3, 6), 'weekly_kg': 2.0}, (20, 2)),
+    ('romanian deadlift', 'strength', 'loaded', {'base_kg': 80, 'reps': (6, 10), 'weekly_kg': 1.25}, (20, 2)),
+    ('bench press', 'strength', 'loaded', {'base_kg': 65, 'reps': (5, 10), 'weekly_kg': 1.0}, (20, 2)),
+    ('incline dumbbell press', 'strength', 'loaded', {'base_kg': 24, 'reps': (8, 12), 'weekly_kg': 0.5}, (0, 2)),
+    ('overhead press', 'strength', 'loaded', {'base_kg': 40, 'reps': (5, 8), 'weekly_kg': 0.75}, (20, 2)),
+    ('barbell row', 'strength', 'loaded', {'base_kg': 60, 'reps': (6, 10), 'weekly_kg': 1.0}, (20, 2)),
+    ('seated cable row', 'strength', 'loaded', {'base_kg': 55, 'reps': (8, 12), 'weekly_kg': 0.75}, (0, 1)),
+    ('lat pulldown', 'strength', 'loaded', {'base_kg': 50, 'reps': (8, 12), 'weekly_kg': 0.75}, (0, 1)),
+    ('leg press', 'strength', 'loaded', {'base_kg': 140, 'reps': (8, 15), 'weekly_kg': 2.5}, (0, 1)),
+    ('hip thrust', 'strength', 'loaded', {'base_kg': 85, 'reps': (8, 12), 'weekly_kg': 1.5}, (20, 2)),
+    ('barbell curl', 'strength', 'loaded', {'base_kg': 30, 'reps': (8, 12), 'weekly_kg': 0.5}, (20, 2)),
+    ('cable tricep pushdown', 'strength', 'loaded', {'base_kg': 28, 'reps': (10, 15), 'weekly_kg': 0.5}, (0, 1)),
+    ('dumbbell lateral raise', 'strength', 'loaded', {'base_kg': 10, 'reps': (10, 15), 'weekly_kg': 0.25}, (0, 2)),
+    ('face pull', 'strength', 'loaded', {'base_kg': 22, 'reps': (12, 20), 'weekly_kg': 0.25}, (0, 1)),
+    ('seated calf raise', 'strength', 'loaded', {'base_kg': 45, 'reps': (10, 15), 'weekly_kg': 1.0}, None),
+    ('walking lunge', 'strength', 'loaded', {'base_kg': 20, 'reps': (8, 14), 'weekly_kg': 0.5}, None),
+    ('pull ups', 'strength', 'bodyweight', {'reps': (4, 12)}, (0, 1)),
+    ('dips', 'strength', 'bodyweight', {'reps': (5, 14)}, (0, 1)),
+    ('hanging leg raise', 'strength', 'bodyweight', {'reps': (6, 15)}, (0, 1)),
+    ('outdoor run', 'cardio', 'distance', {'metres': (4000, 14000), 'pace_s_km': (280, 375)}, (0, 1)),
+    ('treadmill run', 'cardio', 'distance', {'metres': (3000, 10000), 'pace_s_km': (290, 380)}, (0, 1)),
+    ('rowing machine', 'cardio', 'distance', {'metres': (2000, 6000), 'pace_s_km': (200, 260)}, (0, 1)),
+    ('stationary bike', 'cardio', 'distance', {'metres': (8000, 25000), 'pace_s_km': (95, 140)}, (0, 1)),
+    ('assault bike', 'cardio', 'duration', {'seconds': (300, 1200)}, (0, 1)),
+    ('jump rope', 'cardio', 'duration', {'seconds': (120, 480)}, (0, 1)),
+    ('plank', 'mobility', 'duration', {'seconds': (30, 150)}, (0, 1)),
+    ('couch stretch', 'mobility', 'duration', {'seconds': (45, 120)}, (0, 1)),
+    ('pigeon pose', 'mobility', 'duration', {'seconds': (45, 120)}, (0, 1)),
+    ('90/90 hip switch', 'mobility', 'duration', {'seconds': (40, 90)}, (0, 1)),
+    ('world greatest stretch', 'mobility', 'duration', {'seconds': (40, 90)}, (0, 1)),
+    ('thoracic spine opener', 'mobility', 'duration', {'seconds': (30, 90)}, (0, 1)),
+    ('shoulder dislocates', 'mobility', 'duration', {'seconds': (30, 75)}, (0, 1)),
 ]
 
 # Which groups a session of each type draws from, and how many movements it runs
@@ -245,10 +258,31 @@ class Command(BaseCommand):
         return users
 
     def _definitions(self):
-        """The catalogue, keyed by name. Shared reference data: never deleted."""
+        """The catalogue, keyed by name. Shared reference data: never deleted.
+
+        Loading is written on the way in, and only onto a row that has none:
+        unknown -> known is the only move anybody gets to make (AGREED 2/5), so a
+        re-seed never overwrites an answer somebody gave through the app.
+        """
         definitions = {}
-        for name, group, kind, spec in EXERCISES:
-            definition, _ = ExerciseDefinition.objects.get_or_create(name=name)
+        for name, group, kind, spec, loading in EXERCISES:
+            defaults = {}
+            if loading is not None:
+                bar_kg, sides = loading
+                defaults = {'bar_kg': Decimal(bar_kg), 'sides': sides}
+            definition, created = ExerciseDefinition.objects.get_or_create(
+                name=name, defaults=defaults,
+            )
+            if (
+                not created
+                and defaults
+                and definition.bar_kg is None
+                and definition.sides is None
+            ):
+                # An older seeded row, or one migration 0004 never saw.
+                definition.bar_kg = defaults['bar_kg']
+                definition.sides = defaults['sides']
+                definition.save(update_fields=['bar_kg', 'sides'])
             definitions[name] = (definition, group, kind, spec)
         return definitions
 
