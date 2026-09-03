@@ -238,14 +238,26 @@ because the pull request is where the human now meets the work:
 A body that says "implements the spec" wastes the one artefact this flow has for
 carrying an agent's judgement to the human.
 
-**Credentials.** The push travels over the repository's own SSH deploy key.
-`gh pr create` does not — it needs a GitHub API credential scoped to this
-repository (a fine-grained PAT for `gym-app` with *Contents: read and write* and
-*Pull requests: read and write*, or `gh auth login`). If `gh auth status` says
-not logged in, **stop and say so**: push the branch, hand the human the compare
-URL — `https://github.com/HatfieldAlex/gym-app/compare/main...<name>?expand=1` —
-and the body text to paste. Do not go looking for another credential and do not
-invent one.
+**Credentials.** The two halves of this stage are authenticated separately, on
+purpose.
+
+* **The push** travels over the repository's own SSH deploy key. Nothing to set
+  up and nothing to pass — `git push` simply works.
+* **`gh pr create`** needs a GitHub API credential, which a deploy key is not.
+  It reads `GH_TOKEN` from the container's `.claude/settings.local.json`: a
+  fine-grained PAT scoped to `gym-app` alone, with *Pull requests: read and
+  write* and *Contents: **read-only***. Read-only is deliberate — the token
+  that opens pull requests deliberately cannot write code, so the only way a
+  change reaches `origin` is the deploy key, pushing a branch a human still has
+  to merge.
+
+If `gh auth status` reports no token — it expires, and someone may have revoked
+it — **stop and say so** rather than reaching for something else. Push the
+branch, hand the human the compare URL
+(`https://github.com/HatfieldAlex/gym-app/compare/main...<name>?expand=1`) and
+the body text to paste, and mention that `.claude/setup-gh-pr-auth.sh` issues a
+fresh token in about a minute. Do not go looking for another credential, do not
+fall back to `gh auth login`, and do not invent one.
 
 **Then stop.** Opening the pull request is the end of the agent's turn. It does
 not approve it, does not merge it, does not enable auto-merge, and does not
