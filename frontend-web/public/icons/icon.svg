@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>Gym App</title>
+  <!--
+    The design master for the PWA icons. The three PNGs beside it are drawn
+    from this same design by frontend-web/tools/make-icons.py; edit the
+    letterform here, then rerun that script.
+
+    Not listed in manifest.json — it ships to dist/ unreferenced, as the
+    editable source.
+
+    font-size 448 with Liberation Sans Bold gives a cap height of 317px, which
+    is the 0.62 of 512 the full-bleed PNGs use; the baseline sits at
+    256 + 317/2 = 414.5 so the cap box is centred on the square.
+  -->
+  <rect width="512" height="512" fill="#111111"/>
+  <text x="256" y="414.5"
+        font-family="Liberation Sans, Arial, sans-serif"
+        font-weight="bold"
+        font-size="448"
+        text-anchor="middle"
+        fill="#ffffff">G</text>
+</svg>
