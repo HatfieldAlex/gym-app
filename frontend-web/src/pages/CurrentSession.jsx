@@ -3,6 +3,7 @@ import { Navigate, useMatch, useNavigate } from 'react-router-dom'
 
 import { ApiError, api } from '../api.js'
 import AddExerciseForm, { insertByName } from '../components/AddExerciseForm.jsx'
+import Confirm from '../components/Confirm.jsx'
 import LoadingFields, { EMPTY_LOADING, loadingAnswered } from '../components/LoadingFields.jsx'
 import Status from '../components/Status.jsx'
 import Worked from '../components/Worked.jsx'
@@ -929,29 +930,6 @@ function PerformedExercise({ performed, index }) {
         loading={loadingOf(performed)}
       />
     </li>
-  )
-}
-
-/** The second tap, in the place the first one was.
- *
- * Both ways out of a session confirm through here rather than through
- * `window.confirm`: a blocking native dialog mid-workout is easy to dismiss by
- * accident, lands wherever the browser puts it, and cannot be sized to a thumb.
- * Cancel puts the button back and nothing has been sent.
- */
-function Confirm({ question, verb, busy, onConfirm, onCancel }) {
-  return (
-    <div className="confirm">
-      <p className="confirm-question">{question}</p>
-      <div className="confirm-actions">
-        <button className="confirm-yes" type="button" onClick={onConfirm} disabled={busy}>
-          {busy ? `${verb}…` : 'Confirm'}
-        </button>
-        <button className="confirm-no" type="button" onClick={onCancel} disabled={busy}>
-          Cancel
-        </button>
-      </div>
-    </div>
   )
 }
 

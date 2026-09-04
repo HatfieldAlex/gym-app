@@ -14,6 +14,7 @@ from rest_framework.test import APITestCase
 from catalog.models import ExerciseDefinition
 
 from .models import PerformedExercise, PerformedSet, TrainingSession
+from .views import CORRECTION_HEADER
 
 
 class TrainingSessionAPITests(APITestCase):
@@ -710,6 +711,325 @@ class ClosedIsFinalTests(APITestCase):
         )
 
 
+# Passed as `headers=CORRECTING` to the client call, so every test below is one
+# line and there is one place the header is spelled.
+CORRECTING = {CORRECTION_HEADER: '1'}
+
+
+class CorrectionOverrideTests(APITestCase):
+    """One header lets a deliberate correction through to a finished row (C3).
+
+    `X-Edit-Closed-Record: 1` unlocks `PATCH`/`PUT` on a closed row and nothing
+    else: no delete of a finished anything, and no new row created inside one.
+    The fixtures are built closed here rather than borrowed from
+    `ClosedIsFinalTests`, which is the other half of the story -- the refusal
+    without the header -- and has to keep passing exactly as it is.
+    """
+
+    @staticmethod
+    def close(performed_exercise):
+        """Stamp `ended_at` the way end/ does, after the row's own created_at."""
+        performed_exercise.ended_at = timezone.now()
+        performed_exercise.save(update_fields=['ended_at'])
+        return performed_exercise
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.user = User.objects.create_user('lifter', password='pw')
+        cls.other = User.objects.create_user('stranger', password='pw')
+
+        cls.squat = ExerciseDefinition.objects.create(name='Squat')
+        cls.bench = ExerciseDefinition.objects.create(name='Bench press')
+
+        # A finished workout, closed in the only order E4 allows.
+        cls.closed_session = TrainingSession.objects.create(
+            user=cls.user,
+            type='legs',
+            started_at=timezone.now() - timedelta(hours=1),
+            ended_at=timezone.now(),
+        )
+        cls.closed = cls.close(
+            PerformedExercise.objects.create(
+                training_session=cls.closed_session, exercise_definition=cls.squat
+            )
+        )
+        cls.closed_set = PerformedSet.objects.create(
+            performed_exercise=cls.closed, weight_kg='100.00', reps=5
+        )
+
+        # Open inside a closed session: only the session half of the rule locks it.
+        cls.stranded = PerformedExercise.objects.create(
+            training_session=cls.closed_session, exercise_definition=cls.squat
+        )
+        cls.stranded_set = PerformedSet.objects.create(
+            performed_exercise=cls.stranded, reps=5
+        )
+
+        # A workout still being recorded: nothing here needs the header at all.
+        cls.open_session = TrainingSession.objects.create(user=cls.user, type='push')
+        cls.open_exercise = PerformedExercise.objects.create(
+            training_session=cls.open_session, exercise_definition=cls.squat
+        )
+        cls.open_set = PerformedSet.objects.create(
+            performed_exercise=cls.open_exercise, reps=5
+        )
+
+        cls.other_closed_session = TrainingSession.objects.create(
+            user=cls.other,
+            type='push',
+            started_at=timezone.now() - timedelta(hours=1),
+            ended_at=timezone.now(),
+        )
+        cls.other_closed = cls.close(
+            PerformedExercise.objects.create(
+                training_session=cls.other_closed_session,
+                exercise_definition=cls.squat,
+            )
+        )
+        cls.other_closed_set = PerformedSet.objects.create(
+            performed_exercise=cls.other_closed, reps=5
+        )
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+    def set_detail(self, performed_set):
+        return reverse('api:performedset-detail', args=[performed_set.pk])
+
+    def exercise_detail(self, performed_exercise):
+        return reverse('api:performedexercise-detail', args=[performed_exercise.pk])
+
+    def session_detail(self, session):
+        return reverse('api:trainingsession-detail', args=[session.pk])
+
+    def test_the_header_is_the_one_agreed_name(self):
+        """Written out once so the client and the tests cannot drift apart."""
+        self.assertEqual(CORRECTION_HEADER, 'X-Edit-Closed-Record')
+
+    def test_a_set_of_a_closed_exercise_can_be_corrected_with_the_header(self):
+        response = self.client.patch(
+            self.set_detail(self.closed_set), {'reps': 8}, format='json', headers=CORRECTING
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.closed_set.refresh_from_db()
+        self.assertEqual(self.closed_set.reps, 8)
+
+    def test_only_the_exact_value_one_unlocks_a_correction(self):
+        """Nothing a proxy could normalise into a yes counts as one."""
+        detail = self.set_detail(self.closed_set)
+        for value in ('0', 'true', 'yes', 'on', ''):
+            with self.subTest(value=value):
+                response = self.client.patch(
+                    detail,
+                    {'reps': 99},
+                    format='json',
+                    headers={CORRECTION_HEADER: value},
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.closed_set.refresh_from_db()
+                self.assertEqual(self.closed_set.reps, 5)
+
+        # A header spelled differently is simply a header nobody reads.
+        response = self.client.patch(
+            detail, {'reps': 99}, format='json', headers={'X-Edit-Closed': '1'}
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.closed_set.refresh_from_db()
+        self.assertEqual(self.closed_set.reps, 5)
+
+    def test_without_the_header_a_closed_set_is_refused_as_before(self):
+        response = self.client.patch(
+            self.set_detail(self.closed_set), {'reps': 99}, format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data['detail'], 'That exercise has been logged and cannot be changed.'
+        )
+        self.closed_set.refresh_from_db()
+        self.assertEqual(self.closed_set.reps, 5)
+
+    def test_the_header_does_not_unlock_deleting_a_closed_set(self):
+        response = self.client.delete(self.set_detail(self.closed_set), headers=CORRECTING)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(PerformedSet.objects.filter(pk=self.closed_set.pk).exists())
+
+    def test_the_header_does_not_unlock_deleting_a_closed_exercise(self):
+        response = self.client.delete(self.exercise_detail(self.closed), headers=CORRECTING)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(PerformedExercise.objects.filter(pk=self.closed.pk).exists())
+
+    def test_a_closed_blocks_movement_can_be_corrected_with_the_header(self):
+        """The whole point of the iteration: the block pointed at the wrong lift."""
+        response = self.client.patch(
+            self.exercise_detail(self.closed),
+            {'exercise_definition': str(self.bench.pk)},
+            format='json',
+            headers=CORRECTING,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.closed.refresh_from_db()
+        self.assertEqual(self.closed.exercise_definition_id, self.bench.pk)
+
+    def test_the_header_does_not_make_an_exercises_ended_at_settable(self):
+        """It is read-only in the serializer; the header says nothing about that."""
+        was = self.closed.ended_at
+        response = self.client.patch(
+            self.exercise_detail(self.closed),
+            {'ended_at': (timezone.now() + timedelta(hours=2)).isoformat()},
+            format='json',
+            headers=CORRECTING,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.closed.refresh_from_db()
+        self.assertEqual(self.closed.ended_at, was)
+
+    def test_the_header_does_not_unlock_logging_a_set_into_a_closed_exercise(self):
+        before = PerformedSet.objects.count()
+        response = self.client.post(
+            reverse('api:performedset-list'),
+            {'performed_exercise': str(self.closed.pk), 'reps': 3},
+            format='json',
+            headers=CORRECTING,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(PerformedSet.objects.count(), before)
+
+    def test_the_header_does_not_unlock_opening_a_block_in_a_closed_session(self):
+        before = PerformedExercise.objects.count()
+        response = self.client.post(
+            reverse('api:performedexercise-list'),
+            {
+                'training_session': str(self.closed_session.pk),
+                'exercise_definition': str(self.squat.pk),
+            },
+            format='json',
+            headers=CORRECTING,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(PerformedExercise.objects.count(), before)
+
+    def test_the_override_clears_the_session_half_of_the_rule_too(self):
+        """An open block in a closed session is locked by the session; this frees it."""
+        response = self.client.patch(
+            self.set_detail(self.stranded_set),
+            {'reps': 8},
+            format='json',
+            headers=CORRECTING,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.stranded_set.refresh_from_db()
+        self.assertEqual(self.stranded_set.reps, 8)
+
+    def test_another_users_closed_rows_are_still_404_with_the_header(self):
+        """Ownership is answered before the header is ever read."""
+        for detail in (
+            self.exercise_detail(self.other_closed),
+            self.set_detail(self.other_closed_set),
+        ):
+            self.assertEqual(
+                self.client.patch(
+                    detail, {'reps': 1}, format='json', headers=CORRECTING
+                ).status_code,
+                status.HTTP_404_NOT_FOUND,
+            )
+        self.assertTrue(PerformedExercise.objects.filter(pk=self.other_closed.pk).exists())
+        self.assertTrue(PerformedSet.objects.filter(pk=self.other_closed_set.pk).exists())
+
+    def test_an_anonymous_request_with_the_header_is_still_403(self):
+        self.client.logout()
+        response = self.client.patch(
+            self.set_detail(self.closed_set), {'reps': 99}, format='json', headers=CORRECTING
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.closed_set.refresh_from_db()
+        self.assertEqual(self.closed_set.reps, 5)
+
+    def test_the_header_is_never_required_on_an_open_row(self):
+        detail = self.set_detail(self.open_set)
+        self.assertEqual(
+            self.client.patch(detail, {'reps': 6}, format='json').status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertEqual(
+            self.client.patch(
+                detail, {'reps': 7}, format='json', headers=CORRECTING
+            ).status_code,
+            status.HTTP_200_OK,
+        )
+        self.open_set.refresh_from_db()
+        self.assertEqual(self.open_set.reps, 7)
+
+    def test_a_closed_session_can_be_corrected_with_the_header(self):
+        was_ended_at = self.closed_session.ended_at
+        started_at = was_ended_at - timedelta(minutes=30)
+        response = self.client.patch(
+            self.session_detail(self.closed_session),
+            {'type': 'push', 'started_at': started_at.isoformat()},
+            format='json',
+            headers=CORRECTING,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.closed_session.refresh_from_db()
+        self.assertEqual(self.closed_session.type, 'push')
+        self.assertEqual(self.closed_session.started_at, started_at)
+        self.assertEqual(self.closed_session.ended_at, was_ended_at)
+
+    def test_a_closed_session_without_the_header_is_refused(self):
+        """The hole this chunk closes: this was a 200 that rewrote the row."""
+        response = self.client.patch(
+            self.session_detail(self.closed_session), {'type': 'push'}, format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data['detail'], 'That session has ended and cannot be changed.'
+        )
+        self.closed_session.refresh_from_db()
+        self.assertEqual(self.closed_session.type, 'legs')
+
+    def test_a_closed_session_cannot_be_deleted_with_or_without_the_header(self):
+        """It was a 204 that cascaded every block and every set inside it."""
+        detail = self.session_detail(self.closed_session)
+        self.assertEqual(
+            self.client.delete(detail).status_code, status.HTTP_400_BAD_REQUEST
+        )
+        self.assertEqual(
+            self.client.delete(detail, headers=CORRECTING).status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertTrue(TrainingSession.objects.filter(pk=self.closed_session.pk).exists())
+        self.assertTrue(PerformedExercise.objects.filter(pk=self.closed.pk).exists())
+        self.assertTrue(PerformedSet.objects.filter(pk=self.closed_set.pk).exists())
+
+    def test_an_open_session_is_still_discarded_in_one_tap(self):
+        response = self.client.delete(self.session_detail(self.open_session))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(PerformedExercise.objects.filter(pk=self.open_exercise.pk).exists())
+
+    def test_a_closed_sessions_start_cannot_move_past_its_own_end(self):
+        """The serializer's own validate already covers this new path."""
+        response = self.client.patch(
+            self.session_detail(self.closed_session),
+            {'started_at': (self.closed_session.ended_at + timedelta(hours=1)).isoformat()},
+            format='json',
+            headers=CORRECTING,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('ended_at', response.data)
+        was = self.closed_session.started_at
+        self.closed_session.refresh_from_db()
+        self.assertEqual(self.closed_session.started_at, was)
+
+    def test_ending_a_session_did_not_walk_into_the_new_guard(self):
+        """`end/` uses get_object() and never goes through perform_update."""
+        response = self.client.post(
+            reverse('api:trainingsession-end', args=[self.open_session.pk])
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['open_exercise'], str(self.open_exercise.pk))
+        self.assertIsNone(TrainingSession.objects.get(pk=self.open_session.pk).ended_at)
+
+
 class PerformedExerciseHistoryTests(APITestCase):
     """`history/` — the last few times this user trained one movement."""
 
@@ -888,6 +1208,237 @@ class PerformedExerciseHistoryTests(APITestCase):
         with CaptureQueriesContext(connection) as three_rows:
             self.assertEqual(len(self.history().data), 3)
         self.assertEqual(len(three_rows), len(one_row))
+
+
+class PerformedExerciseRecentTests(APITestCase):
+    """`recent/` — the last thirty blocks this user actually logged.
+
+    History answers "when did I last do *this movement*"; recent answers "what
+    have I logged lately", whatever the movement was. It is the list the
+    correction screen is built on, so each row has to arrive complete.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.user = User.objects.create_user('lifter', password='pw')
+        cls.other = User.objects.create_user('stranger', password='pw')
+
+        cls.squat = ExerciseDefinition.objects.create(name='Squat')
+        cls.bench = ExerciseDefinition.objects.create(name='Bench press')
+
+        cls.url = reverse('api:performedexercise-recent')
+
+    # The rows are built per test rather than here, so that "nobody has
+    # trained" can be an honest empty database.
+
+    @staticmethod
+    def workout(user, days_ago, type='mixed', ended=True):
+        """One session on a given day, finished unless asked otherwise."""
+        trained_at = timezone.now() - timedelta(days=days_ago)
+        return TrainingSession.objects.create(
+            user=user,
+            type=type,
+            started_at=trained_at,
+            ended_at=trained_at + timedelta(hours=1) if ended else None,
+        )
+
+    @staticmethod
+    def log(session, exercise, ended=True):
+        """A block in that session, stamped closed the way end/ closes one.
+
+        Closed in a second save, not at create: `ended_at` may not precede the
+        row's own `created_at` (perfex_ended_after_created).
+        """
+        performed = PerformedExercise.objects.create(
+            training_session=session, exercise_definition=exercise
+        )
+        if ended:
+            performed.ended_at = timezone.now()
+            performed.save(update_fields=['ended_at'])
+        return performed
+
+    def train(self, user, exercise, days_ago, **session_kwargs):
+        """A whole one-block workout, the common case in one line."""
+        return self.log(self.workout(user, days_ago, **session_kwargs), exercise)
+
+    def recent(self):
+        return self.client.get(self.url)
+
+    def test_anonymous_request_is_rejected(self):
+        response = self.recent()
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_newest_first_by_when_it_was_trained_then_by_performed_order(self):
+        """Sessions newest first; inside one, the last block done comes first."""
+        # Written oldest-session first, so created_at cannot be doing the work
+        # across sessions.
+        older = self.workout(self.user, days_ago=8)
+        first_that_day = self.log(older, self.squat)
+        newer = self.workout(self.user, days_ago=1)
+        opener = self.log(newer, self.squat)
+        closer = self.log(newer, self.bench)
+        self.assertLess(first_that_day.created_at, opener.created_at)
+
+        self.client.force_login(self.user)
+        response = self.recent()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [e['id'] for e in response.data],
+            [str(closer.pk), str(opener.pk), str(first_that_day.pk)],
+        )
+
+    def test_thirty_is_the_whole_answer(self):
+        """Thirty-five logged blocks, thirty rows, and no way to ask for more."""
+        # days_ago 1 is the newest, 35 the oldest.
+        blocks = {
+            days_ago: self.train(self.user, self.squat, days_ago=days_ago)
+            for days_ago in range(1, 36)
+        }
+
+        self.client.force_login(self.user)
+        response = self.recent()
+        ids = [e['id'] for e in response.data]
+        self.assertEqual(len(ids), 30)
+        self.assertEqual(ids, [str(blocks[days_ago].pk) for days_ago in range(1, 31)])
+        # The thirty-first newest falls off the end, and stays off it.
+        self.assertNotIn(str(blocks[31].pk), ids)
+
+    def test_another_users_training_is_invisible_whatever_its_date(self):
+        for days_ago in (0, 400):
+            self.train(self.other, self.squat, days_ago=days_ago)
+        mine = self.train(self.user, self.squat, days_ago=7)
+
+        self.client.force_login(self.user)
+        response = self.recent()
+        self.assertEqual([e['id'] for e in response.data], [str(mine.pk)])
+
+    def test_an_open_block_is_not_listed(self):
+        """The block being recorded right now is not something to correct (C6)."""
+        logged = self.train(self.user, self.squat, days_ago=3)
+        being_recorded = self.log(
+            self.workout(self.user, days_ago=0, ended=False), self.bench, ended=False
+        )
+
+        self.client.force_login(self.user)
+        ids = [e['id'] for e in self.recent().data]
+        self.assertEqual(ids, [str(logged.pk)])
+        self.assertNotIn(str(being_recorded.pk), ids)
+
+    def test_a_closed_block_beside_an_open_one_is_still_listed(self):
+        """The filter is on the block, not on its session."""
+        running = self.workout(self.user, days_ago=0, ended=False)
+        done = self.log(running, self.squat)
+        being_recorded = self.log(running, self.bench, ended=False)
+
+        self.client.force_login(self.user)
+        ids = [e['id'] for e in self.recent().data]
+        self.assertEqual(ids, [str(done.pk)])
+        self.assertNotIn(str(being_recorded.pk), ids)
+
+    def test_sets_come_back_nested_in_performed_order(self):
+        performed = self.train(self.user, self.squat, days_ago=1)
+        PerformedSet.objects.create(
+            performed_exercise=performed,
+            weight_kg='60.00',
+            reps=8,
+            distance_m='0.00',
+            duration_s=45,
+            rpe='7.5',
+        )
+        PerformedSet.objects.create(performed_exercise=performed, weight_kg='70.00', reps=5)
+
+        self.client.force_login(self.user)
+        sets = self.recent().data[0]['performed_sets']
+        self.assertEqual([s['weight_kg'] for s in sets], ['60.00', '70.00'])
+        # Every measure the editor can rewrite arrives with the row.
+        self.assertEqual(
+            {key: sets[0][key] for key in
+             ('weight_kg', 'reps', 'distance_m', 'duration_s', 'rpe')},
+            {
+                'weight_kg': '60.00',
+                'reps': 8,
+                'distance_m': '0.00',
+                'duration_s': 45,
+                'rpe': '7.5',
+            },
+        )
+
+    def test_every_row_carries_its_session(self):
+        """Its id, its date and its type — enough to head the row and edit it."""
+        performed = self.train(self.user, self.squat, days_ago=1, type='legs')
+
+        self.client.force_login(self.user)
+        row = self.recent().data[0]
+        # A relation renders as its UUID in `response.data`; JSON stringifies
+        # it downstream.
+        self.assertEqual(row['training_session'], performed.training_session_id)
+        self.assertEqual(
+            parse_datetime(row['training_session_started_at']),
+            performed.training_session.started_at,
+        )
+        self.assertEqual(row['training_session_type'], 'legs')
+
+    def test_every_row_carries_its_movement(self):
+        performed = self.train(self.user, self.squat, days_ago=1)
+
+        self.client.force_login(self.user)
+        row = self.recent().data[0]
+        self.assertEqual(row['exercise_definition'], self.squat.pk)
+        self.assertEqual(row['exercise_name'], 'Squat')
+
+    def test_the_answer_is_a_bare_array_not_a_page(self):
+        self.train(self.user, self.squat, days_ago=1)
+
+        self.client.force_login(self.user)
+        response = self.recent()
+        self.assertIsInstance(response.data, list)
+        for key in ('results', 'count', 'next'):
+            self.assertNotIn(key, response.data)
+
+    def test_having_logged_nothing_is_an_empty_list(self):
+        """Never having trained is an answer, not a missing resource."""
+        self.client.force_login(self.user)
+        response = self.recent()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    def test_the_query_count_does_not_grow_with_the_rows(self):
+        """select_related + a prefetch, so thirty blocks are not thirty queries."""
+        def log_workouts(days):
+            for days_ago in days:
+                performed = self.train(self.user, self.squat, days_ago=days_ago)
+                PerformedSet.objects.create(performed_exercise=performed, reps=5)
+
+        self.client.force_login(self.user)
+        log_workouts(range(1, 6))
+        with CaptureQueriesContext(connection) as five_rows:
+            self.assertEqual(len(self.recent().data), 5)
+        log_workouts(range(6, 31))
+        with CaptureQueriesContext(connection) as thirty_rows:
+            self.assertEqual(len(self.recent().data), 30)
+        self.assertEqual(len(thirty_rows), len(five_rows))
+
+    def test_the_action_is_read_only(self):
+        performed = self.train(self.user, self.squat, days_ago=1)
+        was = (PerformedExercise.objects.count(), TrainingSession.objects.count())
+
+        self.client.force_login(self.user)
+        for method, kwargs in (
+            (self.client.post, {'data': {'exercise_definition': str(self.bench.pk)}}),
+            (self.client.patch, {'data': {'exercise_definition': str(self.bench.pk)}}),
+            (self.client.delete, {}),
+        ):
+            with self.subTest(method=method.__name__):
+                response = method(self.url, format='json', **kwargs)
+                self.assertEqual(
+                    response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
+                )
+        self.assertEqual(
+            (PerformedExercise.objects.count(), TrainingSession.objects.count()), was
+        )
+        performed.refresh_from_db()
+        self.assertEqual(performed.exercise_definition_id, self.squat.pk)
 
 
 class PerformedExerciseLoadingTests(APITestCase):

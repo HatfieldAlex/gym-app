@@ -10,12 +10,47 @@ from rest_framework.response import Response
 from .models import PerformedExercise, PerformedSet, TrainingSession
 from .serializers import (
     PerformedExerciseHistorySerializer,
+    PerformedExerciseRecentSerializer,
     PerformedExerciseSerializer,
     PerformedSetSerializer,
     TrainingSessionDetailSerializer,
     TrainingSessionSerializer,
     closed_reason,
 )
+
+
+CORRECTION_HEADER = 'X-Edit-Closed-Record'
+
+
+def correcting(request):
+    """True when this request explicitly asks to write to a finished record.
+
+    It unlocks `PATCH`/`PUT` on a closed row, and that alone. It does **not**
+    unlock `DELETE` -- `perform_destroy` never reads it -- and it does not
+    unlock creating a row inside a closed one, because `_require_open` in
+    `serializers.py` never reads it either. So a finished record can be
+    corrected and can never be removed, nor grown a new set: that is the rule,
+    enforced in the two functions that deliberately do not call this one.
+
+    The server holds no memory of it between requests. There is no flag on the
+    session, no setting on the user, no mode. The arming lives entirely in the
+    browser, and every single write it permits carries the header itself --
+    which is what makes each one deliberate, and what makes `grep -r
+    X-Edit-Closed-Record` the complete list of places that can write to a
+    finished record.
+
+    It is not permission. An anonymous request is still 403 and another user's
+    row is still 404, both answered before this is ever read: the requester
+    owns the row, it is simply finished.
+
+    Only the exact string `1` counts. Absent, empty, `'0'`, `'true'`, `'on'`
+    are all "no", and the request is refused exactly as it is without them --
+    one accepted value, so there is nothing to argue about later and nothing a
+    proxy can normalise into a yes. `request.headers` is case-insensitive, so
+    the client's casing does not matter and nothing here needs to know that
+    WSGI spells it `HTTP_X_EDIT_CLOSED_RECORD`.
+    """
+    return request.headers.get(CORRECTION_HEADER) == '1'
 
 
 class ClosedIsFinalMixin:
@@ -40,18 +75,34 @@ class ClosedIsFinalMixin:
 
     def perform_update(self, serializer):
         # The row as it stands, before the change is written into it.
-        self.refuse_if_closed(serializer.instance)
+        if not correcting(self.request):
+            self.refuse_if_closed(serializer.instance)
         serializer.save()
 
     def perform_destroy(self, instance):
+        # No override here on purpose: `correcting` unlocks a correction, never
+        # a removal, so a finished row cannot be deleted by any request.
         self.refuse_if_closed(instance)
         instance.delete()
 
 
-class TrainingSessionViewSet(viewsets.ModelViewSet):
-    """`/api/training-sessions/` — the requester's own sessions, newest first."""
+class TrainingSessionViewSet(ClosedIsFinalMixin, viewsets.ModelViewSet):
+    """`/api/training-sessions/` — the requester's own sessions, newest first.
+
+    Until now this viewset had no closed-guard at all, unlike its two siblings:
+    an ended session could be `DELETE`d outright -- cascading every block and
+    every set inside it -- and `PATCH`ed freely, with no gate and no warning.
+    It has both halves now. `PATCH` on an ended session is refused unless the
+    request carries the correction header; `DELETE` is refused full stop, with
+    no override. Discarding a live workout is untouched, because an open
+    session is not closed and `closed_reason` answers `None` for it.
+    """
 
     serializer_class = TrainingSessionSerializer
+
+    @staticmethod
+    def writable_target(instance):
+        return {'training_session': instance}
 
     # Reading one session returns its sets too; listing them does not. `current`
     # is a single session as well, and the page it feeds wants the whole thing in
@@ -169,6 +220,11 @@ class PerformedExerciseViewSet(ClosedIsFinalMixin, viewsets.ModelViewSet):
     HISTORY_DEFAULT_LIMIT = 3
     HISTORY_MAX_LIMIT = 20
 
+    # What `recent/` answers with: a fixed thirty, with no parameter to ask for
+    # more or fewer (AGREED, C5). The correction screen lists everything it is
+    # given, so the cap is the whole of its paging story.
+    RECENT_LIMIT = 30
+
     def get_queryset(self):
         # Reached through the session's owner, so another user's rows are simply
         # not in the queryset -- detail routes 404 rather than 403 on them.
@@ -188,6 +244,8 @@ class PerformedExerciseViewSet(ClosedIsFinalMixin, viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'history':
             return PerformedExerciseHistorySerializer
+        if self.action == 'recent':
+            return PerformedExerciseRecentSerializer
         return super().get_serializer_class()
 
     def perform_create(self, serializer):
@@ -281,6 +339,49 @@ class PerformedExerciseViewSet(ClosedIsFinalMixin, viewsets.ModelViewSet):
             queryset = queryset.exclude(training_session=exclude_session)
 
         return Response(self.get_serializer(queryset[:limit], many=True).data)
+
+    @action(detail=False)
+    def recent(self, request):
+        """The requester's most recently logged blocks, newest first.
+
+        What the correction screen lists: thirty blocks, each carrying its sets,
+        its movement and its session's date and type, so opening one to correct
+        it costs no second request.
+
+        A bare array, not a page, and no parameters at all: thirty is the whole
+        answer (C5), and having logged nothing is an answer too, so `[]` with
+        200.
+
+        Logged blocks only (C6). An open block is the one being recorded right
+        now in the exercise zone, and a screen that can rewrite a block has no
+        business rewriting that one from under it. `end/` is what puts a block
+        in the log, and this lists what is in the log.
+
+        A read, and only a read: no `perform_*`, no body, nothing written.
+        """
+        # Scoped through the session's owner, like every queryset here, and
+        # ordered on history's terms rather than the list route's: by when the
+        # training happened, and within a session by the order the blocks were
+        # performed. Newest first, so today's mistake is the top row.
+        queryset = (
+            PerformedExercise.objects
+            .filter(
+                training_session__user=self.request.user,
+                ended_at__isnull=False,
+            )
+            .select_related('exercise_definition', 'training_session')
+            .prefetch_related(
+                Prefetch(
+                    'performed_sets',
+                    queryset=PerformedSet.objects.order_by('created_at'),
+                ),
+            )
+            .order_by('-training_session__started_at', '-created_at')
+        )
+
+        return Response(
+            self.get_serializer(queryset[:self.RECENT_LIMIT], many=True).data
+        )
 
     @action(detail=True, methods=['post'])
     def end(self, request, pk=None):

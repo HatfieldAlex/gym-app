@@ -34,8 +34,11 @@ function csrfToken() {
   )
 }
 
-async function request(method, path, body) {
-  const headers = { Accept: 'application/json' }
+async function request(method, path, body, extraHeaders) {
+  // `extraHeaders` is spread here, after Accept and before the CSRF token
+  // below, so a caller can add a header of its own and can never displace
+  // X-CSRFToken. Every caller but `correct` passes three arguments.
+  const headers = { Accept: 'application/json', ...extraHeaders }
   const init = { method, headers, credentials: 'same-origin' }
 
   if (body !== undefined) {
@@ -97,6 +100,14 @@ async function download(path) {
   return { blob: await response.blob(), filename }
 }
 
+/** The header that says this PATCH means to write to a finished record.
+ *
+ * Named here and sent from `correct` alone, so grepping the string finds every
+ * place in the app that can write to a logged block: this file, and nowhere
+ * else.
+ */
+export const CORRECTION_HEADER = 'X-Edit-Closed-Record'
+
 export const api = {
   list,
   download,
@@ -104,4 +115,21 @@ export const api = {
   post: (path, body) => request('POST', path, body),
   patch: (path, body) => request('PATCH', path, body),
   delete: (path) => request('DELETE', path),
+
+  /** A deliberate correction to a record the API would otherwise refuse.
+   *
+   * Its own name rather than an option on `patch`: `patch(path, body, { force:
+   * true })` reads like a retry, and this is the one call in the app that
+   * writes to something the app has spent an entire iteration refusing to write
+   * to. The name is what makes a reader stop.
+   *
+   * The header is harmless on a row that happens to be open, so the correction
+   * screen sends it on every save rather than branching on state it cannot see.
+   *
+   * **There is no `correctDelete`, and there is never going to be one.** The
+   * server's `perform_destroy` does not read this header, so such a helper would
+   * be a lie in the client: nothing in this app removes a set, a block or a
+   * session.
+   */
+  correct: (path, body) => request('PATCH', path, body, { [CORRECTION_HEADER]: '1' }),
 }

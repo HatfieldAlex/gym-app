@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 
+import { useEditGate } from '../editing.jsx'
 import FeedbackMarker from './FeedbackMarker.jsx'
 
 const LINKS = [
@@ -12,6 +13,8 @@ const LINKS = [
 
 /** Shown only to signed-in visitors, as the server-rendered shell did. */
 export default function Nav() {
+  const { armed } = useEditGate()
+
   return (
     <nav>
       {LINKS.map(({ to, label, end }) => (
@@ -19,6 +22,9 @@ export default function Nav() {
           {label}
         </NavLink>
       ))}
+      {/* Not a control: the app is in one unusual state and this says so from
+          every screen, but the way out of it is on the page that turned it on. */}
+      {armed && <span className="edit-armed">Editing on</span>}
       <FeedbackMarker />
     </nav>
   )
