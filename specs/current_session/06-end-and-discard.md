@@ -5,6 +5,14 @@ by mistake.
 
 Needs chunk 03.8. Independent of chunk 05.
 
+> **Superseded in one respect.** Item 4 below, its matching "Done when" bullet
+> and its "What the user sees" line say that ending an empty session is allowed
+> and files it in history. That is no longer true: `end/` on a session with no
+> exercises deletes it and answers 204. See
+> [no_empty_sessions](../no_empty_sessions/README.md). Everything else in this
+> file still stands, and the original wording is left below as the record of
+> what was agreed at the time.
+
 ## Read first
 
 - `CurrentSession.jsx` as chunk 03.8 left it

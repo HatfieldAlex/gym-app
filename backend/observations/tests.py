@@ -164,6 +164,10 @@ class TrainingSessionLifecycleTests(APITestCase):
     def test_ending_a_session_closes_it_once(self):
         session_id = self.start().data['id']
         end_url = reverse('api:trainingsession-end', args=[session_id])
+        # A session with nothing in it is thrown away rather than closed (S3),
+        # so give this one a block before asking it to close.
+        performed = self.open_exercise(session_id, with_set=True)
+        self.client.post(reverse('api:performedexercise-end', args=[performed.pk]))
 
         response = self.client.post(end_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -177,6 +181,51 @@ class TrainingSessionLifecycleTests(APITestCase):
 
         response = self.client.get(reverse('api:trainingsession-current'))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_ending_a_session_with_nothing_in_it_deletes_it(self):
+        """Tapping Start by mistake costs nothing: 204, and no row (S3)."""
+        session_id = self.start().data['id']
+
+        response = self.client.post(
+            reverse('api:trainingsession-end', args=[session_id])
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.content, b'')
+        self.assertFalse(TrainingSession.objects.filter(pk=session_id).exists())
+
+        response = self.client.get(reverse('api:trainingsession-current'))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_ending_a_session_with_an_exercise_still_records_it(self):
+        """The other half of the rule: one block is enough to be a workout."""
+        session_id = self.start().data['id']
+        performed = self.open_exercise(session_id, with_set=True)
+        self.client.post(reverse('api:performedexercise-end', args=[performed.pk]))
+
+        response = self.client.post(
+            reverse('api:trainingsession-end', args=[session_id])
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data['ended_at'])
+        self.assertIsNotNone(TrainingSession.objects.get(pk=session_id).ended_at)
+
+        listed = self.client.get(reverse('api:trainingsession-list'))
+        self.assertEqual([s['id'] for s in listed.data['results']], [session_id])
+
+    def test_ending_a_session_that_already_ended_is_still_refused_when_it_is_empty(self):
+        """Ending is not a way to delete what is already recorded. The empty
+        ended sessions history still holds are refused, and are left alone."""
+        session = TrainingSession.objects.create(
+            user=self.user,
+            started_at=timezone.now() - timedelta(hours=1),
+            ended_at=timezone.now(),
+        )
+        response = self.client.post(
+            reverse('api:trainingsession-end', args=[session.pk])
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['detail'], 'This session has already ended.')
+        self.assertTrue(TrainingSession.objects.filter(pk=session.pk).exists())
 
     def test_a_session_cannot_end_over_an_open_exercise(self):
         """Close the block, then the session; the other order is refused (E4)."""
@@ -593,6 +642,24 @@ class ClosedIsFinalTests(APITestCase):
             performed_exercise=cls.stranded, reps=5
         )
 
+        # A logged workout holding exactly one block: its own fixture, because
+        # closed_session carries two on purpose and emptying it would still
+        # leave a workout behind.
+        cls.single_session = TrainingSession.objects.create(
+            user=cls.user,
+            type='pull',
+            started_at=timezone.now() - timedelta(hours=1),
+            ended_at=timezone.now(),
+        )
+        cls.single = cls.close(
+            PerformedExercise.objects.create(
+                training_session=cls.single_session, exercise_definition=cls.squat
+            )
+        )
+        cls.single_set = PerformedSet.objects.create(
+            performed_exercise=cls.single, weight_kg='60.00', reps=8
+        )
+
         cls.other_closed = cls.close(
             PerformedExercise.objects.create(
                 training_session=TrainingSession.objects.create(
@@ -673,6 +740,16 @@ class ClosedIsFinalTests(APITestCase):
             self.client.delete(detail).status_code, status.HTTP_400_BAD_REQUEST
         )
         self.assertTrue(PerformedExercise.objects.filter(pk=self.closed.pk).exists())
+
+    def test_the_only_exercise_of_a_logged_session_cannot_be_deleted(self):
+        """A workout in history cannot be emptied from the other end: closed is
+        final (E6), so the invariant a session never lands empty holds after."""
+        response = self.client.delete(
+            reverse('api:performedexercise-detail', args=[self.single.pk])
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(PerformedExercise.objects.filter(pk=self.single.pk).exists())
+        self.assertEqual(self.single_session.performed_exercises.count(), 1)
 
     def test_an_exercise_cannot_be_opened_in_a_closed_session(self):
         response = self.client.post(
