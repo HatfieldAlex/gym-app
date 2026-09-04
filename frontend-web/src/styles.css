@@ -1099,11 +1099,20 @@ nav .feedback-marker:active {
     from { opacity: 0; transform: translateY(-.25rem); }
 }
 
-/* Your notes: the record on Settings that a logged thought was kept. Left
-   aligned inside a centred <main>, as every other list in the app is. */
+/* Your notes: the record on Settings that a logged thought was kept, and now
+   the one place a thought is marked dealt with. Left aligned inside a centred
+   <main>, as every other list in the app is. */
 .notes-section { margin-top: 2.5rem; text-align: left; }
 .notes { list-style: none; margin: 1rem 0 0; padding: 0; max-width: 30rem; }
 .note + .note { margin-top: 1.25rem; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); padding-top: 1.25rem; }
+/* The row: body and meta on the left, the × or ↺ at the end of it and level
+   with the first line of the body rather than under it -- a note runs to
+   paragraphs and has to wrap beside its control, never behind it. */
+.note { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .5rem; }
+/* Takes what is left of the row, and is allowed to be narrower than its longest
+   word: without the floor lifted, one unbroken /exercises/<uuid> in the meta
+   line pushes the control off a 375px screen. */
+.note-text { flex: 1; min-width: 0; }
 /* A note is free text and can run to paragraphs: its own line breaks are kept,
    and a long unbroken run breaks rather than widening the page at 375px. Full
    strength, unlike the <p> default: the note is the content here, not a
@@ -1113,6 +1122,101 @@ nav .feedback-marker:active {
    at: left to itself, one /exercises-catelog/<uuid> widens the whole page on a
    narrow phone. Same reason as `.feedback-path` above. */
 .note-meta { margin-top: .35rem; font-size: .85rem; overflow-wrap: anywhere; }
+
+/* 44px of real thumb, and deliberately unlike `.set-action`'s small Edit and
+   Delete a few hundred lines up (C13). The two disagree on purpose, so neither
+   should be "fixed" to match the other: a set row is read mid-set with one
+   hand, where a Delete that is easy to hit is the hazard, while this list is
+   read sitting down and its whole job is clearing forty notes down quickly.
+   What protects against an accidental close here is the arming below, not a
+   small button.
+   Wide enough for `Sure?` while it still says `×`, so the two taps of a close
+   land in the same place and the row neither jumps nor reflows under the thumb
+   between them -- the job `.set-action`'s transparent border does at a smaller
+   scale. */
+.note-action {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 4.5rem;
+    min-height: 44px;
+    padding: .25rem .5rem;
+    /* Transparent rather than absent, so the armed box is a colour appearing
+       and not a pixel of width appearing under the thumb. */
+    border: 1px solid transparent;
+    border-radius: .25rem;
+    font: inherit;
+    font-size: 1.05rem;
+    line-height: 1;
+    color: inherit;
+    background: none;
+    /* As quiet as the meta line beside it. The × is red when it is armed and
+       not one moment before. */
+    opacity: .7;
+    cursor: pointer;
+}
+/* Armed, waiting for the second tap: `.set-action[data-armed]`'s treatment,
+   written out here rather than by extending that selector, because the two
+   sections keep their own rules. Boxed as well as red, and the word inside it
+   changes too, so it still reads as armed with the colour taken away. */
+.note-action[data-armed] {
+    border-color: currentColor;
+    color: color-mix(in srgb, red 65%, currentColor);
+    opacity: 1;
+}
+.note-action[disabled] { opacity: .3; cursor: default; }
+/* Closed, and reading as closed: the body recedes and the meta line says the
+   word, so the state carries in both schemes and to a reader who cannot see the
+   difference in strength at all. Only the text dims -- the ↺ is the one thing
+   on a closed row anybody might tap, and it stays at full strength. */
+.note[data-closed] .note-body { opacity: .55; }
+.note[data-closed] .note-action { opacity: 1; }
+.note-closed { font-weight: 600; }
+/* A failure takes the whole of the next line, under the note it is about. */
+.note .status { flex-basis: 100%; margin: .35rem 0 0; font-size: .85rem; }
+
+/* Show closed / Hide closed: a view switch under the heading, not a primary
+   action, so it is not `.button` -- it sits in the caption register of
+   `.export-summary` below rather than competing with the <h2> above it. 44px
+   tall all the same; it is tapped with the same thumb as everything else here.
+   The side padding is the chip the pressed state fills, and is taken back off
+   the left so the word still lines up with the heading and the list. */
+.notes-toggle {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: 44px;
+    margin: .5rem 0 0 -.6rem;
+    padding: 0 .6rem;
+    /* Transparent, so the pressed ring is not a size change either. */
+    border: 1px solid transparent;
+    border-radius: .375rem;
+    font: inherit;
+    font-size: .9rem;
+    color: inherit;
+    background: none;
+    opacity: .7;
+    cursor: pointer;
+}
+/* On, while the closed notes are showing: a filled chip inside a ring, which is
+   the feedback marker's `aria-expanded` treatment in the nav above at the size
+   of a caption -- so `Hide closed` reads as a switch that is on rather than as
+   a second thing to do. Mixed into `Canvas` rather than into transparency, so
+   the fill follows the scheme instead of tinting what is behind it. */
+.notes-toggle[aria-pressed="true"] {
+    border-color: color-mix(in srgb, currentColor 35%, transparent);
+    background: color-mix(in srgb, currentColor 12%, Canvas);
+    opacity: 1;
+}
+/* Arming disarms on blur, so where the keyboard is has to be obvious on every
+   control in the section. */
+.note-action:focus-visible,
+.notes-toggle:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
 
 /* Download your data: the zip of everything, offered under Log out. Settings
    has two sections now and they sit the same distance apart; the heading rule
