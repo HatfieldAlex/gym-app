@@ -11,7 +11,7 @@ is not the tool here.
 ## Any change to this app follows the iteration flow
 
 **Read [iteration-flow.md](iteration-flow.md) and work to it.** A new feature, a
-bug, a refactor, a round of polish — all of them run the same nine-stage loop,
+bug, a refactor, a round of polish — all of them run the same seven-stage loop,
 one fresh subagent per stage, and that file is the authority on it rather than a
 suggestion. Do not improvise a shorter route because a change looks small; a
 small change gets a small spec, not a skipped one.
@@ -23,11 +23,13 @@ Three things it exists to stop:
    written and agreed to by the human. A bug is not started until its
    reproduction is pinned down.
 2. **Work landing straight on `main`.** It happens on its own branch in its own
-   worktree, and stops at stage ⑤: handed back, uncommitted, whole.
-3. **Standing in for the human at ⑥ and ⑦.** The review and the go-ahead are
-   the human's alone. They are not to be performed, inferred, or assumed to have
-   happened. Publishing (⑧) and tearing down (⑨) start only once the human has
-   said so in as many words — and ⑨ deletes things, so a refusal from
+   worktree and reaches `main` as a **pull request**, never as a commit an agent
+   made on `main` and never as a merge an agent performed.
+3. **Merging its own pull request.** ⑥ is the human's alone — the reading, the
+   running, and the merge. It is not to be performed, inferred, or assumed to
+   have happened. An agent opens the PR at ⑤ and stops: no approving, no
+   merging, no auto-merge. Tearing down (⑦) starts only once the merge has
+   actually landed in `origin/main` — and it deletes things, so a refusal from
    `git worktree remove` or `git branch -d` is reported, never forced past.
 
 **What is not an iteration:** a question about the code, a file to read, an
