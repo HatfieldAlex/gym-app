@@ -91,9 +91,20 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
    stops fitting -- `Romanian deadlift (single leg)` is 30 characters -- and it
    is the point the line breaks at: below it the button drops to the next line
    rather than the box shrinking under a name. */
-.add-exercise-form .add-exercise-field { flex: 1 1 15rem; margin: 0; display: inline-grid; gap: .25rem; text-align: left; }
-.add-exercise-form label { font-size: .85rem; opacity: .7; }
-.add-exercise-form input {
+.add-exercise-form .add-exercise-field { flex: 1 1 15rem; }
+/* A label stacked over its control, said once for every field of this shape
+   rather than once per room they stand in: the name box on two pages, and the
+   bar box and the side count in a third place again -- the question the zone
+   asks (07), which is not inside this form at all. What is left below is only
+   how much room each one gets, which is the container's business and nobody
+   else's. */
+.add-exercise-field { margin: 0; display: inline-grid; gap: .25rem; text-align: left; }
+.add-exercise-field label { font-size: .85rem; opacity: .7; }
+/* One recipe for every box and menu in those fields -- same type, same padding,
+   same full width of whatever the field was given -- so three fields read as one
+   row of three answers and not as two boxes and a menu. */
+.add-exercise-field input,
+.loading-field select {
     font: inherit;
     /* 16px or more, or iOS Safari zooms the page in on focus. */
     font-size: 1rem;
@@ -116,6 +127,42 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .add-exercise-form .button[type="button"][disabled] { opacity: .35; }
 /* A failure takes the whole of the next line, under the button it is about. */
 .add-exercise-form .status { flex-basis: 100%; margin: 0; }
+
+/* How a movement is loaded */
+/* The bar box, the side count and the line that says the answer is permanent --
+   its own block rather than lines inside the Add an exercise section above,
+   because the component is shared: the exercise zone stands the same three
+   things somewhere else entirely, and a rule scoped to the add form would not
+   follow them there.
+
+   Both fields are `.add-exercise-field` like the name box and stack a label
+   over a control exactly as it does; all this block says is how much room each
+   one needs. */
+/* Narrower than the name, and narrow enough that the two of them wrap onto a
+   second line together rather than squeezing a movement's name off the first. A
+   bar weight is four characters; the side count is a sentence, so it takes the
+   slack the bar box does not -- and the bar box does not grow into slack of its
+   own, because a four-character answer given the whole width of a phone reads
+   as the wrong question.
+   Said of the fields rather than of either room they stand in (08). These two
+   widths are the same answer to the same question in both -- the add form here
+   and on the catalogue page, and the question the zone asks (07), where the
+   pair stands alone in a panel -- and when they were written twice the copy in
+   the zone had drifted: the bar box grew to the full width of the zone every
+   time the two of them wrapped, which at 375px is every time. Doubled up on
+   `.add-exercise-field` only to outrank the name box's own width above, which
+   these fields would otherwise take. */
+.add-exercise-field.loading-field { flex: 0 1 7rem; }
+.add-exercise-field.loading-field--sides { flex: 1 1 13rem; }
+/* The select is sized and typed with the boxes beside it, in
+   `.add-exercise-field input` above: it is one of the three answers rather than
+   a menu that happens to be near them, so it is one rule and not two. Inside a
+   running session `.record-set select` takes it to 44px, with the dropdown. */
+
+/* A line under the row rather than a fourth field in it, and quieter than the
+   labels: it is a fact about the answer, not a warning about the form. It lands
+   between the fields and the button on purpose -- read last, just before Add. */
+.loading-note { flex-basis: 100%; margin: 0; font-size: .85rem; opacity: .7; }
 
 /* Exercise detail */
 .meta { margin-top: .5rem; }
@@ -141,6 +188,35 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .sets td { padding: .3rem .9rem .3rem 0; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
 .sets thead th { font-weight: 600; font-size: .85rem; opacity: .7; }
 .sets tbody th { font-weight: 400; opacity: .7; }
+/* The weight column carries its working now -- `20 + 2 × 45 = 110` where it used
+   to carry `110.00` -- and a column of that beside Reps, RPE and the rest is
+   wider than a phone. `main` is shrink-to-fit and the list inside it is an
+   inline-block, so a table left to itself sets the width of the page, and the
+   page is what goes sideways: the whole session scrolls to read one number.
+   So the table is given something of its own to scroll instead. `display: block`
+   is what makes it a scrollable box at all -- the rows inside still lay out as a
+   table -- `width: max-content` keeps it exactly as wide as its own columns
+   where there is room for them, and the cap is what turns the overflow into a
+   scroll inside the table rather than under the page.
+   The cap is a viewport measure and not `100%`, which is the whole of whether
+   this works. Every box between the table and the page is sized by what it
+   holds -- the `<li>`, the inline-block list, `main` itself -- so a percentage
+   here has nothing definite to be a percentage *of* while those widths are
+   being worked out, and is ignored at exactly the moment it is needed: `main`
+   grows to the table's full width first, and only then does the table fit
+   inside it, with nothing left to scroll and the page a screen and a half
+   wide. A `vw` measure is absolute, so it is honoured in that first pass and
+   `main` never grows past the screen. 4rem is `main`'s own padding, the same
+   subtraction `.record-set` and its neighbours make further down for the same
+   reason.
+   Named by element: `ol.sets` in the current session is the same class on a
+   list, and is laid out by its own rules further down. */
+table.sets {
+    display: block;
+    width: max-content;
+    max-width: calc(100vw - 4rem);
+    overflow-x: auto;
+}
 
 /* Current session: the same data as the detail page above, but a set is a row
    rather than a table cell -- it is read one-handed mid-workout, where a column
@@ -277,7 +353,12 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
 
 .record-set { margin-top: 2rem; }
 /* The first tap of the session and the full width of the column: choosing a
-   movement is the only thing this section does until one is held. */
+   movement is the only thing this section does until one is held.
+   It reaches the Sides menu too -- in the add form standing here, and in the
+   question the zone asks (07) -- and that is meant rather than incidental: every
+   menu in this section is tapped one-handed with sweaty hands, so every one of
+   them is 44px. The same field on the catalogue page keeps the ordinary size, as
+   the box and the button beside it do; that page is read sitting down. */
 .record-set select {
     font: inherit;
     /* 16px or more, or iOS Safari zooms the page in on focus. */
@@ -398,7 +479,21 @@ ol.sets .set .status { flex-basis: 100%; margin: 0; font-size: .85rem; }
    floor run out, and by then there is nothing left to give.
    Scoped to the paired list: the same rows with no comparison beside them --
    Completed exercises, and a movement being done for the first time -- keep the
-   single 7rem column they already had. */
+   single 7rem column they already had.
+
+   The line got longer (08): `20 + 2 × 62.5 = 145 kg × 12` is more than twice the
+   `145 kg × 12` these widths were measured for, and 6rem apiece leaves about
+   128px of cell for it. There is no type size that fits that on one line and is
+   still readable at arm's length, so it wraps inside its own cell instead --
+   which costs nothing, because the width above is a floor for the columns rather
+   than a promise about the string. The floor stays where it is: it is what drops
+   Edit and Delete to a second line, and lowering it to chase a longer string
+   would put them back on the first one squeezing the numbers, which is the trade
+   this whole block exists to have made.
+   `line-height` a shade under the default is what keeps a wrapped cell to two
+   lines' worth of row rather than three. Figures of one width so the digit that
+   changed between last week and this one sits directly under itself down the
+   list, and so the two columns read across at a glance. */
 .paired-heads .set-last,
 .paired-heads .set-measures,
 ol.sets--paired .set-last,
@@ -406,20 +501,32 @@ ol.sets--paired .set-measures {
     box-sizing: border-box;
     flex: 1 1 0;
     min-width: 6rem;
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
 }
 /* Half a rem rather than three quarters, and the difference spent on the
    numbers: two columns and a pair of controls do not otherwise reach a 320px
    screen. */
 .paired-heads,
 ol.sets--paired .set { gap: .5rem; }
+/* Each cell a box the full height of the row with its line centred in it, so a
+   pair where one side wraps to two lines and the other does not still reads as
+   two columns rather than as a number floating beside a paragraph (08). The rule
+   below wanted the height anyway.
+   Last time's cell is in the list but not in the header, where it is a stacked
+   pair of words and a date and lays itself out just above. */
+.paired-heads .set-measures,
+ol.sets--paired .set-measures,
+ol.sets--paired .set-last {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+}
 /* The rule between them, so which column is which is a glance rather than a
    read. A rule and not a colour: nothing in this comparison is better or
    worse, and colour on this tab means something deletes. */
 .paired-heads .set-measures,
 ol.sets--paired .set-measures {
-    align-self: stretch;
-    display: flex;
-    align-items: center;
     padding-left: .5rem;
     border-left: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
@@ -430,6 +537,16 @@ ol.sets--paired .set-measures {
    colour. Read-only, and it has to look it: no border, no underline, nothing
    that invites the thumb. */
 ol.sets--paired .set-last { opacity: .7; }
+/* And the working inside it takes a smaller step than it does anywhere else,
+   because opacity multiplies (08). `.per-side-fixed`'s .65 inside this cell's
+   .7 is .455 of the page's ink -- around 3.4:1 on a white screen, under the
+   4.5:1 body text wants and well under what a phone at arm's length in a gym
+   can be read at. .85 of the cell puts it near 5.6:1 and still a step behind
+   the total beside it, which is the whole of what the step is for: last time's
+   column stays reference, and last time's working stays the quietest thing in
+   the comparison, without going to grey. Contrast figures are computed from the
+   two opacities, not measured on a screen. */
+ol.sets--paired .set-last .per-side-fixed { opacity: .85; }
 /* One workout ran a set further than the other. The dash is an absence, not a
    value, and is not read at the weight of one. */
 ol.sets--paired [data-none] { opacity: .35; }
@@ -452,6 +569,44 @@ ol.sets--paired [data-none] { opacity: .35; }
 .earlier-sessions li { display: flex; gap: .75rem; padding: .15rem 0; }
 .earlier-sessions time { min-width: 3.5rem; flex: none; }
 
+/* How is this loaded? -- the question, standing where the boxes stand (07) */
+/* It occupies the log form's place, so it takes the log form's margins: the
+   history below must not shift when the panel is answered away and the boxes
+   arrive. `LoadingFields` says it owns no layout, so the two fields are laid out
+   here the way the add form lays them out over there -- same fields, a different
+   room to stand them in. */
+.ask-loading { margin: .75rem 0 1rem; }
+/* The size this tab gives a sub-heading -- an exercise's name in Completed
+   exercises, and the same distance under the zone's own <h2> -- so the question
+   reads as one more part of the zone rather than as something that has appeared
+   over the top of it. */
+.ask-loading h3 { margin: 0 0 .25rem; font-size: 1.1rem; }
+/* Why it is being asked, in the register the zone already uses for a line that
+   explains rather than states: exactly `.last-time-note`, the other such line on
+   this screen. Quiet is the whole treatment -- this is a question, and a
+   question drawn at the weight of an answer reads as an error. */
+.ask-loading-why { margin: 0 0 .75rem; font-size: .85rem; opacity: .7; }
+/* Side by side where there is room, wrapping rather than squeezing. Only the
+   room is said here: the fields' stacking, type, padding and widths are all
+   `.add-exercise-field`'s and `.loading-field`'s, above, because these are the
+   same two fields the add form asks with and there is one of each rule. At the
+   width of a phone the pair wraps -- a four-character box on the first line and
+   the menu, whose longest option is a sentence, taking the whole of the second.
+   The turn is at 20.75rem of zone -- the two widths and the gap -- so a 375px
+   phone, which gives the zone 311px, always gets the two lines and anything
+   much wider gets the one, exactly as the add form does. */
+.ask-loading-fields { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
+/* Thumb-sized, like every control in the zone. Only the height: everything else
+   about the box already came from the field, and the menu beside it is taken to
+   the same 44px by `.record-set select`, which this panel stands inside. */
+.ask-loading input { min-height: 44px; }
+.ask-loading .loading-note { margin: .5rem 0 0; }
+/* Save, the way past, and the way out, wrapping across 375px exactly as the log
+   form's three do -- because it is the same row: it is laid out and sized down
+   in `.log-set-actions`, where Save stands in for Log set. All this needs of its
+   own is the gap above it. */
+.ask-loading-actions { margin-top: .75rem; }
+
 /* The two boxes sit side by side with the button under them, so logging a set is
    one glance and one tap rather than a column to scroll through. */
 .log-set { margin: .75rem 0 1rem; }
@@ -468,7 +623,87 @@ ol.sets--paired [data-none] { opacity: .35; }
     padding: .5rem .6rem;
     width: 7.5rem;
 }
-.log-set .status { margin: .5rem 0 0; }
+/* One box with the movement's arithmetic laid out around it: `20 + 2 ×` to the
+   left, `= 140 kg` to the right, on one line so the row reads as a sentence
+   rather than as three fields. Flex rather than inline text because at 375px the
+   line has to wrap under itself instead of running off the side. */
+.log-set .per-side-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+/* Both halves are the movement's, not the user's, and neither is a control: they
+   match the box's type size so the sum reads across as one sentence, and they
+   take the arrow cursor rather than the text cursor, because there is no editing
+   a bar weight from here or from anywhere (AGREED 2). No border, no background,
+   nothing that invites a thumb.
+   Scoped to the form: on the rows a set is read back on the same two halves are
+   the row's own size, and they wrap inside a 6rem column rather than refusing
+   to. */
+.log-set .per-side-fixed,
+.log-set .per-side-total { font-size: 1.125rem; white-space: nowrap; cursor: default; }
+/* Room kept for the total whether or not there is one yet, so the box does not
+   jump sideways under the thumb as the first digit lands. Only the form needs
+   it: a row that has been logged always has its answer. */
+.log-set .per-side-total { min-width: 4.5rem; }
+/* Narrower than the total box, because one side is a smaller number -- and the
+   width it gives back is what lets the whole sum sit on one line. Still 44px
+   tall and still 1.125rem of type: see above. */
+.log-set .per-side input { width: 5.5rem; }
+
+/* The working, and the answer -- said once, for every place a set shows both */
+/* Not scoped, unlike everything around it, and that is the point. These two
+   dress the live sum beside the box above, the rows in the paired list, the
+   Completed exercises rows and the Weight (kg) cell on a finished session's
+   page. The number being typed and the same number read back a second later
+   have to be drawn the same way, or the app says they are two different kinds
+   of thing; one rule is the only way that stays true.
+   Both halves are text and neither is a control, in all four places.
+   `20 + 2 × 60` is the same every set of the movement and is read once: a step
+   quieter, so in the form the one thing that can be typed into is the one thing
+   that looks it, and on a row the eye is not asked to re-read the arithmetic it
+   has already read. Opacity rather than a colour, like every other quiet thing
+   on this tab. Against the page it is about 7:1 -- comfortably readable, and a
+   clear step behind the answer beside it. Where it lands inside something that
+   is already quiet the two opacities multiply rather than add, which is the one
+   place this needs watching, and is handled at that place: see last time's
+   column in the paired list above. */
+.per-side-fixed { opacity: .65; }
+/* `= 140 kg` is the answer, and the answer is what the eye comes back to -- in
+   the form it is the number that will be on the row a second after Log set is
+   tapped, and on the row it is `140 kg × 8`, which is the whole of what that row
+   said before it started showing its working. So it is the one part of the sum
+   that is not stepped back, and a shade heavier than the working beside it. That
+   contrast is the whole treatment: no colour, no box, nothing that makes a piece
+   of text look tappable.
+   Figures of one width so it does not shuffle as the digits change under the
+   thumb, and so the answers line up down a column of rows. */
+.per-side-total { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* The two halves as one thing. In the paired list `.set-measures` and
+   `.set-last` are flex boxes -- they centre their line in a row another cell may
+   have made two lines tall -- and two spans handed straight to one of those
+   would be two flex items with the space between them dropped and no wrapping
+   inside 6rem. Wrapped once, the cell gets the single item it was already
+   getting and the line wraps inside it exactly as the plain string did.
+   `min-width: 0` so that item can be narrower than its longest run of
+   characters, which is what keeps it inside the column floor rather than
+   widening the row. */
+.worked { min-width: 0; }
+
+/* The line under a tap that went wrong, in whichever of the two forms is
+   standing in this one place -- the log form, and the question one state before
+   it (07), which fails in the same two ways and says so in the same words. One
+   gap, said once (08): two copies of a margin between the same button and the
+   same sentence is two things to keep in step for no reason. */
+.log-set .status,
+.ask-loading .status { margin: .5rem 0 0; }
+/* Wraps, because the buttons do not always fit across 375px: Log set and
+   whichever of Log exercise and Change exercise the block is up to share the
+   first line, and the second takes the next when there is no room for it. The
+   question the zone asks before any of this exists (07) stands three buttons in
+   the same place with the same problem -- Save, the way past it, and the same
+   way out -- so it is one row and one rule rather than two that drift.
+   The band the restored line sits in belongs to `.log-set-actions` alone and is
+   set below: the question panel has no draft to come back to, so reserving two
+   lines above Save there would be a gap kept for something that never arrives. */
+.log-set-actions,
+.ask-loading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }
 /* A restored draft (E10). Z6's objection was never a filled box; it was that a
    number the user did not type fails *silently*. So it does not: the two boxes
    come back marked and a line under them says why.
@@ -509,27 +744,35 @@ ol.sets--paired [data-none] { opacity: .35; }
     font-size: .85rem;
     line-height: 1.35;
 }
-/* Two buttons, not three: Log set, and whichever of Log exercise and Change
-   exercise the block is up to (02). They fit across a phone with room to
-   spare, and `flex-wrap` is what is left of the old three-button row -- the
-   floor below which the pair drops to two lines rather than squeezing, which
-   is under 320px of screen.
-   The margin is the band kept for the restored line above (E10) -- the same
-   two lines it is given, to the pixel -- so Log set stands in one place
-   whether a draft came back or not, and does not walk up under the thumb when
-   the first keystroke clears the line. When the line is there it fills the
-   band instead. */
-.log-set-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin-top: 2.3rem; }
+/* The band kept for the restored line above (E10) -- the same two lines it is
+   given, to the pixel -- so Log set stands in one place whether a draft came
+   back or not, and does not walk up under the thumb when the first keystroke
+   clears the line. When the line is there it fills the band instead.
+   On `.log-set-actions` only: there is no draft on the question panel, so
+   `.ask-loading-actions` keeps the flex row above and none of this. */
+.log-set-actions { margin-top: 2.3rem; }
 .log-set .restored-note + .log-set-actions { margin-top: 0; }
 /* The tap of the workout, and the third-largest thing on the page after Start
    and End: directly under the two boxes it reads from, within reach of the
-   thumb that just finished typing into them. */
-.log-set-actions .button { margin-top: 0; min-height: 3.25rem; padding: .75rem 1.75rem; font-size: 1.05rem; }
+   thumb that just finished typing into them. Save on the question panel is that
+   same tap one state earlier, in the same place, so it is the same size -- the
+   44px `.button--tap` guarantees it, plus the height every primary tap in this
+   section already carries over that floor. */
+.log-set-actions .button,
+.ask-loading-actions .button { margin-top: 0; min-height: 3.25rem; padding: .75rem 1.75rem; font-size: 1.05rem; }
 /* The rarer tap of the two -- once per movement rather than once per set -- so
    it reads as the quieter one and cannot be mistaken for Log set mid-workout.
    Quieter, not smaller: it shares Log set's line and is still 44px of target,
-   since a tap that is meant is a tap that has to land. */
-.log-exercise {
+   since a tap that is meant is a tap that has to land.
+
+   `.skip-loading` -- "Not sure -- just log the total" -- is the same shape of
+   offer one state along, and wears the same clothes on purpose: plainly there,
+   plainly the lesser of the two, and plainly not a warning about anything. It
+   throws nothing away and it is nobody's mistake, so it is neither red nor
+   small. One rule for both, because the day one of them is restyled is the day
+   the two stop reading as the same kind of thing. */
+.log-exercise,
+.skip-loading {
     min-height: 44px;
     padding: .75rem .5rem;
     border: 0;
@@ -540,7 +783,8 @@ ol.sets--paired [data-none] { opacity: .35; }
     text-decoration: underline;
     cursor: pointer;
 }
-.log-exercise[disabled] { opacity: .35; text-decoration: none; cursor: default; }
+.log-exercise[disabled],
+.skip-loading[disabled] { opacity: .35; text-decoration: none; cursor: default; }
 
 /* Change exercise is the way out of a wrong choice, and a way out has to be
    findable: a bordered button beside Log set rather than the underlined

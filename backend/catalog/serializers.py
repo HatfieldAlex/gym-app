@@ -16,11 +16,37 @@ class ExerciseDefinitionSerializer(serializers.ModelSerializer):
     # question.
     name = serializers.CharField(max_length=120, trim_whitespace=True)
 
+    # Declared rather than generated for the same reason `name` is: the rules belong to
+    # the serializer, not to whatever the model's nullable columns happen to imply.
+    # Optional on create (W7) -- the API is not stricter than the column, and the *form*
+    # (chunk 06) is what makes sure a new entry is answered. Both or neither, checked in
+    # validate() below, so a half-answer is a 400 here rather than a 500 out of
+    # exercisedef_loading_both_or_neither.
+    #
+    # Neither is writable after create: the viewset offers no update method, so a PATCH
+    # carrying either one is 405 and never reaches this serializer (AGREED 2). The one
+    # way a null pair ever becomes a set pair is the `loading/` action.
+    bar_kg = serializers.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        min_value=0,
+        required=False,
+        allow_null=True,
+    )
+    # 1 for a stack or a sled, 2 for a barbell, and nothing else (W5, AGREED 1). A
+    # ChoiceField rather than an IntegerField with bounds so that 3, 0 and "two" are all
+    # refused in the field's own words.
+    sides = serializers.ChoiceField(
+        choices=[1, 2],
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = ExerciseDefinition
         # created_by is deliberately absent (N6): a client can neither read who added
         # an entry nor claim it -- the viewset stamps it from the request.
-        fields = ['id', 'name', 'created_at']
+        fields = ['id', 'name', 'bar_kg', 'sides', 'created_at']
         read_only_fields = ['id', 'created_at']
 
     def validate_name(self, value):
@@ -39,7 +65,25 @@ class ExerciseDefinitionSerializer(serializers.ModelSerializer):
             existing = ExerciseDefinition.objects.filter(name__iexact=name).first()
             if existing is not None:
                 raise duplicate_entry_error(existing)
+
+        # Both numbers or neither of them (W1). Neither one says anything on its own --
+        # a bar with no side count cannot be added up, and a side count with no bar
+        # cannot either -- so "unset" stays one state rather than three. The database
+        # says the same thing in exercisedef_loading_both_or_neither; this is the
+        # version that answers 400 and names the column the sender forgot, instead of
+        # letting an IntegrityError become a 500 for a client that could have been
+        # told. Keyed on the *missing* one, so ApiError.detail reads as an instruction
+        # rather than a complaint about the number they did send.
+        bar_kg = attrs.get('bar_kg')
+        sides = attrs.get('sides')
+        if bar_kg is None and sides is not None:
+            raise serializers.ValidationError({'bar_kg': [LOADING_HALF_ANSWERED]})
+        if sides is None and bar_kg is not None:
+            raise serializers.ValidationError({'sides': [LOADING_HALF_ANSWERED]})
         return attrs
+
+
+LOADING_HALF_ANSWERED = 'Say both the bar weight and the side count, or neither.'
 
 
 def duplicate_entry_error(existing):
@@ -61,3 +105,21 @@ def duplicate_entry_error(existing):
         # straight away, and need its name and not only its id.
         'existing': ExerciseDefinitionSerializer(existing).data,
     })
+
+
+class ExerciseLoadingSerializer(serializers.Serializer):
+    """The body of `POST /exercises/<id>/loading/`: how a movement is loaded.
+
+    Both numbers are required here, unlike on create. This endpoint exists to *answer*
+    the question "how is this loaded?", so a body that answers half of it has not
+    answered it, and gets a 400.
+
+    `name` is deliberately not a field: this route sets the loading and nothing else,
+    so a body that also carries a name renames nothing.
+    """
+
+    # The same bounds the catalogue entry states, restated because this is a different
+    # body arriving at a different route -- and, being required, they cannot simply be
+    # borrowed from the entry serializer's optional pair.
+    bar_kg = serializers.DecimalField(max_digits=6, decimal_places=2, min_value=0)
+    sides = serializers.ChoiceField(choices=[1, 2])
