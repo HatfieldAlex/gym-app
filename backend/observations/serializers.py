@@ -172,6 +172,32 @@ class PerformedExerciseHistorySerializer(PerformedExerciseDetailSerializer):
         ]
 
 
+class PerformedExerciseRecentSerializer(PerformedExerciseHistorySerializer):
+    """One recently logged block, with enough of its session to correct it.
+
+    The correction screen lists blocks and opens one for editing, and it does
+    both from a single request: the movement and its name, every set nested in
+    performed order, and the three session fields it needs -- `training_session`
+    (the id, already on the base serializer), `training_session_started_at`
+    (inherited) and `training_session_type`. Nesting the whole session would
+    carry fields that screen has no use for; a second request per block would
+    be thirty of them.
+
+    Read-only throughout. This serializer is never used for a write: the two
+    session fields are the session's own, and are not settable through a
+    performed exercise. Corrections go to each row's own endpoint.
+    """
+
+    training_session_type = serializers.CharField(
+        source='training_session.type', read_only=True,
+    )
+
+    class Meta(PerformedExerciseHistorySerializer.Meta):
+        fields = PerformedExerciseHistorySerializer.Meta.fields + [
+            'training_session_type'
+        ]
+
+
 class TrainingSessionSerializer(serializers.ModelSerializer):
     """A session with its exercises nested in performed order.
 

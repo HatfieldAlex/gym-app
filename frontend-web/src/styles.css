@@ -102,9 +102,13 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .add-exercise-field label { font-size: .85rem; opacity: .7; }
 /* One recipe for every box and menu in those fields -- same type, same padding,
    same full width of whatever the field was given -- so three fields read as one
-   row of three answers and not as two boxes and a menu. */
+   row of three answers and not as two boxes and a menu. The third selector is
+   the correction editor's Movement menu (Settings, at the bottom of this file):
+   it wears `.add-exercise-field` like every other labelled control in the app,
+   so it joins the recipe here rather than growing a second copy of it. */
 .add-exercise-field input,
-.loading-field select {
+.loading-field select,
+.record-editor-movement {
     font: inherit;
     /* 16px or more, or iOS Safari zooms the page in on focus. */
     font-size: 1rem;
@@ -1223,7 +1227,105 @@ nav .feedback-marker:active {
    is shared rather than written twice, because two <h2>s on one page that drift
    to different sizes is the whole risk here. */
 .export-section { margin-top: 2.5rem; text-align: left; }
-.notes-section h2, .export-section h2 { margin: 0; font-size: 1.1rem; }
+.notes-section h2, .export-section h2, .edit-data h2 { margin: 0; font-size: 1.1rem; }
 /* The quiet register of a caption, capped at the width the notes list uses so
    the sentence wraps rather than running the width of a desktop window. */
 .export-summary { margin: .5rem 0 1rem; max-width: 30rem; font-size: .9rem; opacity: .7; }
+
+/* Edit training data: the one door in the app that leads to writing over a
+   finished record. Everything else on Settings is quiet furniture and is
+   styled as such; this section is not, because the paragraph at the top of it
+   is the point of the section rather than a caption under a heading. It sits
+   at the same 2.5rem as its neighbours and shares their heading rule -- being
+   the serious one is the prose's job, not a size or a colour's. */
+.edit-data { margin-top: 2.5rem; text-align: left; }
+/* Full strength, unlike the page's other <p>s, and capped at the width the
+   notes list and the export summary use so it wraps rather than running a
+   desktop window's width. */
+.edit-data-warning { margin: 1rem 0 0; max-width: 30rem; opacity: 1; }
+/* What is true right now, and how it ends: a caption about the state, so the
+   quiet register the export summary is in. */
+.edit-data-state { margin: 1rem 0 0; max-width: 30rem; font-size: .9rem; opacity: .7; }
+/* The same hairline between rows that separates two notes above, because it is
+   the same thing: a list of records, one per line. */
+.edit-data-list { list-style: none; margin: 1rem 0 0; padding: 0; max-width: 30rem; }
+/* Child selectors, both of them, and for the same reason as the button rule
+   below: the editor opens inside one of these <li>s and nests a list of its own,
+   which a descendant `li` would rule from up here. */
+.edit-data-list > li + li { margin-top: .75rem; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); padding-top: .75rem; }
+/* A row is a button, and the whole line is the target. `.set-action`'s
+   register -- small, quiet, text-like -- because that is what this is: not a
+   `.button`, not thumb-sized, not full-page-width. Left-aligned and full row
+   width, so tapping anywhere on the line opens it and the text still starts
+   where the eye is already reading. The child selector is load-bearing: the
+   editor opens *inside* one of these <li>s, and a bare `button` here would
+   repaint its Save and Cancel as underlined text too. */
+.edit-data-list > li > button {
+    display: block;
+    width: 100%;
+    padding: .25rem 0;
+    border: 1px solid transparent;
+    border-radius: .25rem;
+    font: inherit;
+    color: inherit;
+    background: none;
+    text-align: left;
+    text-decoration: underline;
+    opacity: .8;
+    cursor: pointer;
+}
+.edit-data-list > li > button[disabled] { opacity: .4; text-decoration: none; cursor: default; }
+
+/* The editor itself, and the one thing in this app allowed to look like a form
+   from 2003. That is the point of it rather than an oversight: it is a tool for
+   writing over a finished record, it is behind a warning and a two-tap gate,
+   and looking like the rest of the app is the last thing it should do. So no
+   thumb targets, no full-width major buttons, no arithmetic beside a box and no
+   colour of its own -- labelled boxes holding the columns as the database holds
+   them, and two ordinary buttons under them. */
+.record-editor { display: grid; gap: 1rem; }
+/* A hairline and a quiet legend: three groups because this is a form about
+   three different rows, and the legend is what says which. */
+.record-editor fieldset {
+    margin: 0;
+    padding: .75rem;
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: .375rem;
+    display: grid;
+    gap: .75rem;
+}
+.record-editor legend { padding: 0 .35rem; font-size: .85rem; opacity: .7; }
+/* Ended: the same label-over-value shape as the fields around it, so the group
+   reads as one column, but with nothing to type into. */
+.record-editor-read-label { font-size: .85rem; opacity: .7; }
+.record-editor-read { opacity: 1; }
+/* One set per line: its number, then its five measures. */
+.record-editor-sets { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
+.record-editor-sets li { display: flex; align-items: start; gap: .5rem; }
+/* The same hairline the list of rows uses, said again here rather than
+   inherited from it: five boxes wrap onto two lines, so without a rule between
+   sets the third set's Weight sits under the second set's RPE with nothing to
+   say they are different sets. */
+.record-editor-sets li + li { border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); padding-top: .75rem; }
+.record-editor-set-number { padding-top: 1.35rem; font-size: .85rem; opacity: .7; }
+/* The five boxes wrap rather than scroll, and the flex basis is what decides
+   where: wide enough for "Distance (m)" to be readable and for the box under it
+   to keep 16px type -- below that, focusing a number box zooms iOS in, the same
+   reason `.edit-set input` gives at line 344 -- so at 375px the row folds into
+   pairs down the page instead of running off the side of it. */
+.record-editor-measures { flex: 1; display: flex; flex-wrap: wrap; gap: .5rem; }
+.record-editor-measures > .add-exercise-field { flex: 1 1 7rem; min-width: 7rem; }
+/* Save and Cancel, side by side, both ordinary `.button`s. */
+.record-editor-actions { margin: 0; display: flex; gap: .5rem; }
+.record-editor-actions .button { margin-top: 0; }
+/* Cancel is the quieter of the two, the way the add form's is: it throws away
+   what was typed and writes nothing, so it is never the warning. */
+.record-editor-actions .button[type="button"] {
+    border-color: color-mix(in srgb, currentColor 45%, transparent);
+    opacity: .8;
+}
+/* The nav's marker for the one unusual state the app can be in. Small and
+   quiet -- no background, no border, no colour of its own -- and it takes part
+   in the wrapping row like a link rather than sitting on top of it, so the
+   375px row the comment above `nav` describes just wraps one item further. */
+.edit-armed { font-size: .85rem; opacity: .7; }

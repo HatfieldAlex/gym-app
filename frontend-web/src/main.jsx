@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 
 import App from './App.jsx'
 import { AuthProvider } from './auth.jsx'
+import { EditGateProvider } from './editing.jsx'
 import { registerServiceWorker } from './serviceWorker.js'
 import './styles.css'
 
@@ -13,7 +14,11 @@ createRoot(document.getElementById('root')).render(
         shell, so a reload or a deep link lands where it should. */}
     <BrowserRouter>
       <AuthProvider>
-        <App />
+        {/* Inside the auth provider, because logging out is one of the three
+            things that ends an arming. */}
+        <EditGateProvider>
+          <App />
+        </EditGateProvider>
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,
