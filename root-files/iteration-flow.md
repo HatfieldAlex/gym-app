@@ -1,9 +1,9 @@
 # One iteration
 
 One round of work, start to finish: a rough intention is interrogated into a
-spec, the spec is built on its own branch in its own worktree, the human reviews
-it by hand, and the branch is then folded back into `main` and the worktree
-taken away again.
+spec, the spec is built on its own branch in its own worktree, the branch goes
+up as a pull request, and the human reviews and merges that pull request before
+the worktree is taken away again.
 
 **Whatever the work is.** A new feature, a bug the human has just hit, a
 refactor, a round of polish, an experiment likely to be thrown away — they all
@@ -13,18 +13,21 @@ fine.
 
 Every stage below is a **fresh subagent**. Nothing is carried between them in
 anyone's head — each stage leaves a written artefact (an agreed description, a
-worktree, a directory of specs, a diff) and the next stage starts cold from it.
-That is the point: a stage that comes out wrong is redone by re-running that
-stage, not by unpicking everything after it.
+worktree, a directory of specs, a pull request) and the next stage starts cold
+from it. That is the point: a stage that comes out wrong is redone by re-running
+that stage, not by unpicking everything after it.
 
-There is exactly **one manual gate**, and it belongs to the human: nothing is
-committed, pushed or merged until the human has read the code and said so.
+There is exactly **one manual gate**, and it belongs to the human: it is the
+merge button on the pull request. Everything before it an agent may run
+unattended, because none of it touches `main`. Nothing after it happens until
+the merge has actually landed.
 
 > **Who `HUMAN` is.** This file is addressed to agents, so it names its actors
 > rather than saying "you". `HUMAN` is the person whose app this is — the one
-> the agent is working for. Every other actor named here is an agent. The three
-> `HUMAN` steps in the diagram below are the ones no agent may do on their
-> behalf, and no agent may move past them unprompted.
+> the agent is working for. Every other actor named here is an agent. The two
+> `HUMAN` steps in the diagram below — the answers at ① and the whole of ⑥ —
+> are the ones no agent may do on their behalf, and no agent may move past them
+> unprompted.
 
 ## The flow
 
@@ -42,8 +45,9 @@ committed, pushed or merged until the human has read the code and said so.
     ┌────────────────────────────────▼─────────────────────────────────┐
     │ ② WORKTREE                                              subagent │
     │                                                                  │
-    │   git worktree add <name> -b <name>, beside the others, then     │
-    │   make install in it. The layout does the rest.                  │
+    │   git fetch origin first — local main is not kept in sync.       │
+    │   git worktree add <name> -b <name> origin/main, beside the      │
+    │   others, then make install in it. The layout does the rest.     │
     └────────────────────────────────┬─────────────────────────────────┘
                    an empty branch with a working checkout
     ┌────────────────────────────────▼─────────────────────────────────┐
@@ -62,34 +66,30 @@ committed, pushed or merged until the human has read the code and said so.
     └────────────────────────────────┬─────────────────────────────────┘
                    a working tree full of uncommitted work
     ┌────────────────────────────────▼─────────────────────────────────┐
-    │ ⑤ HAND BACK                                             subagent │
+    │ ⑤ SHIP                                                  subagent │
     │                                                                  │
-    │   Tell the human it is done, and what to look at: the branch,    │
-    │   the worktree, the specs built, anything left undone. Stop.     │
+    │   One commit for the whole iteration, the branch pushed, and a   │
+    │   pull request opened against main. What the hand-back used to   │
+    │   say goes in the PR body. Then stop — do not merge it.          │
     └────────────────────────────────┬─────────────────────────────────┘
                                      │
   ══════════════════════════════════ ▼ ═══════════════════════════════════
-   ⑥  THE HUMAN REVIEWS IT — in person, with no agent standing in. Reads
-       the diff, runs it. Happy: commits on that branch, in that worktree,
-       in their own words. Not happy: says so, and the flow goes back to ③
-       or ④ rather than forward. NO AGENT GOES PAST THIS LINE UNBIDDEN.
+   ⑥  THE HUMAN REVIEWS THE PULL REQUEST — on GitHub, with no agent
+       standing in. Reads the diff, pulls the branch, runs it. Happy:
+       merges it, their own hand on the button. Not happy: says so, and
+       the flow goes back to ③ or ④ rather than forward.
+       NO AGENT MERGES ITS OWN PULL REQUEST.
   ══════════════════════════════════ ▼ ═══════════════════════════════════
                                      │
-                      ⑦  HUMAN: "committed, go ahead"
+                             the merge, on main
                                      │
     ┌────────────────────────────────▼─────────────────────────────────┐
-    │ ⑧ PUBLISH                                               subagent │
+    │ ⑦ TEAR DOWN                                             subagent │
     │                                                                  │
-    │   git push -u origin <name>     the branch, as its own branch    │
-    │   git merge <name>              into main, locally, from main/   │
-    │   git push origin main          main, up to GitHub               │
-    └────────────────────────────────┬─────────────────────────────────┘
-                     main contains the work, everywhere
-    ┌────────────────────────────────▼─────────────────────────────────┐
-    │ ⑨ TEAR DOWN                                             subagent │
-    │                                                                  │
-    │   git worktree remove <name>    the directory, its .venv and     │
-    │   git branch -d <name>          its node_modules, and the branch │
+    │   Watch for that merge — it is the trigger, and no sentence      │
+    │   from the human is needed. Then bring main down, take the       │
+    │   worktree and the branch away, and leave the root links         │
+    │   pointing somewhere that still exists.                          │
     └──────────────────────────────────────────────────────────────────┘
                    back where it started, one iteration on
 ```
@@ -102,14 +102,12 @@ committed, pushed or merged until the human has read the code and said so.
 | ② | [Worktree](#-worktree) | subagent | that name | `<name>/` on branch `<name>`, installed |
 | ③ | [Spec](#-spec) | subagent | the description | `specs/<name>/` |
 | ④ | [Build](#-build) | a subagent per chunk | those specs | uncommitted code on the branch |
-| ⑤ | [Hand back](#-hand-back) | subagent | that code | the **human**, told it is ready |
-| ⑥ | [Review](#-the-humans-review) | **the human, alone** | that code | a commit — or a trip back to ③ |
-| ⑦ | Go-ahead | **the human** | that commit | permission to publish it |
-| ⑧ | [Publish](#-publish) | subagent | the human's commit | the branch on GitHub, merged into `main` |
-| ⑨ | [Tear down](#-tear-down) | subagent | a merged branch | nothing, which is the idea |
+| ⑤ | [Ship](#-ship) | subagent | that code | one commit, pushed, and an open pull request |
+| ⑥ | [Review](#-the-humans-review) | **the human, alone** | that pull request | a merge — or a trip back to ③ |
+| ⑦ | [Tear down](#-tear-down) | subagent | the merge | nothing, which is the idea |
 
-Five of the nine are an agent's to run unattended. ⑥ and ⑦ are not, and ① is
-only half — the questions are an agent's, the answers are not.
+Five of the seven are an agent's to run unattended. ⑥ is not, and ① is only
+half — the questions are an agent's, the answers are not.
 
 ### ① Grill
 
@@ -137,6 +135,10 @@ obvious — that is what this stage is for. It ends when there is a **name** and
 **paragraph the human has read and agreed with**, including what is out of
 scope.
 
+That paragraph is not just for ③. It is the first thing the human sees again at
+⑥, because ⑤ puts it at the top of the pull request — so write it as something
+worth reading twice.
+
 The name is used three times and should be chosen once: the worktree directory,
 the branch, and — in `snake_case` — the specs directory. So
 `enhance-current-exercise` the branch, `specs/exercise_zone/` the specs.
@@ -145,13 +147,43 @@ the branch, and — in `snake_case` — the specs directory. So
 
 From the container (the directory holding `.bare/` and every worktree):
 
-    git worktree add <name> -b <name> main
+    git fetch origin
+    git worktree add <name> -b <name> origin/main
     cd <name> && make install
 
 `make install` builds that branch's own `.venv/` and `node_modules/`, and pulls
 in `make root-links` on the way through. See [README.md](README.md) for why each
 branch owns its build state. `make hooks` is already installed and covers new
 worktrees automatically — it does not need re-running.
+
+**Cut the branch from `origin/main`, not from `main`.** They are two different
+refs and *nothing keeps them equal on its own*. Fetching moves `origin/main` and
+only `origin/main` — the local `main` branch stays exactly where it was. Local
+`main` advances only when a person or an agent stands in the `main/` worktree
+and pulls; ⑦ does that, but only for an iteration that was torn down in that
+session. So after a pull request that merged on GitHub and was never torn down
+here, or after anyone pushed to `main` from anywhere else, local `main` is
+quietly behind. It does not look behind: `git status` in `main/` says nothing,
+because it is comparing against a stale `origin/main` until the next fetch.
+
+Which is why the fetch is not conditional. "Fetch first if anything might have
+merged since" asks an agent to guess at something it cannot see; fetch every
+time, then name `origin/main` as the start point so the branch is cut from what
+was just fetched rather than from whatever the local pointer happens to say.
+Then confirm it, and say what came back:
+
+    git rev-list --count main..origin/main   # 0 → local main was already current
+    git log --oneline -1 origin/main         # the commit the branch is cut from
+
+A non-zero count is not a failure — it means local `main` was stale and starting
+from `origin/main` stepped around it. It is still worth reporting, because
+`main/` itself is *still* behind and stays behind until someone pulls there.
+
+A branch cut from a stale `main` turns into a conflicted pull request at ⑥,
+which is the one place this flow cannot afford friction. The same applies to a
+worktree that has sat through somebody else's merge: if ④ ran long, fetch again
+and bring `origin/main` into the branch before ⑤, rather than handing the human
+a conflict to untangle inside their review.
 
 The worktree is switchable with `wt <name>` the moment it exists.
 
@@ -191,65 +223,133 @@ function does not need to be split; a chunk that spans the backend model, the
 endpoint and the tests may well be three agents working at once. The chunk
 author knows which; the orchestrator does not.
 
-Nothing is committed here. The whole iteration arrives as one uncommitted
-working tree, so the review gate sees it whole.
+Nothing is committed here. Chunks land one after another into the same
+uncommitted working tree, and ⑤ commits the lot in one go — so the pull request
+is one diff, the way the human reads it.
 
-### ⑤ Hand back
+### ⑤ Ship
 
-Tell **the human** it is done, and say what to look at: the branch, the worktree
-to `wt` into, which chunks landed, anything that came out differently from the
-spec, anything skipped. Then stop, and wait to be spoken to.
+Where the old flow stopped and waited, this one commits, pushes and opens the
+pull request. It is still one uninterrupted piece of work handed over whole —
+the handover is just a PR now instead of a sentence.
+
+**One commit for the whole iteration.** Not one per chunk. Read the diff before
+making it (`git status`, `git diff`) and check that what is there is the
+iteration and nothing else — a stray `.venv`, a scratch file, a `console.log`
+left in from ④ are all cheaper to catch here than in review.
+
+    git add -A
+    git commit -m "<name>: <one line saying what it does>"
+    git push -u origin <name>
+
+Then the pull request, against `main`:
+
+    gh pr create --base main --head <name> \
+        --title "<name>: <the same one line>" \
+        --body-file <a scratch path outside the worktree>
+
+Write the body to a scratch file **outside** the worktree, so it never shows up
+in the diff it is describing.
+
+**The body is the hand-back.** Everything the old ⑤ said out loud goes in it,
+because the pull request is where the human now meets the work:
+
+* the agreed description from ①, near enough verbatim — what this is, and what
+  it deliberately is not;
+* which chunks of `specs/<name>/` landed;
+* anything that came out differently from the spec, and why;
+* anything skipped, and anything the human should poke at by hand;
+* how to run it: `wt <name>` and `make run`, plus any migration or seed step.
+
+A body that says "implements the spec" wastes the one artefact this flow has for
+carrying an agent's judgement to the human.
+
+**Credentials.** The two halves of this stage are authenticated separately, on
+purpose.
+
+* **The push** travels over the repository's own SSH deploy key. Nothing to set
+  up and nothing to pass — `git push` simply works.
+* **`gh pr create`** needs a GitHub API credential, which a deploy key is not.
+  It reads `GH_TOKEN` from the container's `.claude/settings.local.json`: a
+  fine-grained PAT scoped to `gym-app` alone, with *Pull requests: read and
+  write* and *Contents: **read-only***. Read-only is deliberate — the token
+  that opens pull requests deliberately cannot write code, so the only way a
+  change reaches `origin` is the deploy key, pushing a branch a human still has
+  to merge.
+
+If `gh auth status` reports no token — it expires, and someone may have revoked
+it — **stop and say so** rather than reaching for something else. Push the
+branch, hand the human the compare URL
+(`https://github.com/HatfieldAlex/gym-app/compare/main...<name>?expand=1`) and
+the body text to paste, and mention that `.claude/setup-gh-pr-auth.sh` issues a
+fresh token in about a minute. Do not go looking for another credential, do not
+fall back to `gh auth login`, and do not invent one.
+
+**Then stop.** Opening the pull request is the end of the agent's turn. It does
+not approve it, does not merge it, does not enable auto-merge, and does not
+nudge. ⑦ is waiting on the human, and waiting is the correct behaviour.
 
 ### ⑥ The human's review
 
 **This stage is the human's, and no agent may do it, stand in for it, or skip
 it.** An agent reading this file has finished its work at ⑤ and starts again at
-⑧, on being told to.
+⑦, when the merge it is watching for arrives.
 
-What it consists of: `wt <name>`, reading the diff, `make run`, poking at the
-thing. The human commits on that branch once happy — their commit, their
-message, their judgement of what "happy" means. An agent's account of its own
-work is not a review, and a green test suite is not one either.
+What it consists of: reading the diff on GitHub, `wt <name>` or `gh pr checkout
+<n>` to pull it down, `make run`, poking at the thing. The human merges it when
+happy — their judgement of what "happy" means, their hand on the button. An
+agent's account of its own work is not a review, and a green test suite is not
+one either.
 
 If it is wrong, this is where it goes back: to ④ if a chunk was built badly, to
 ③ if the spec itself was wrong. Both are cheap, which is the whole reason the
-work is split into chunks and kept off `main` until now.
+work is split into chunks and kept off `main` until now. Fixes go on the same
+branch and are pushed to the same pull request — the one-commit rule is about
+the *first* push, not a reason to rewrite history under a review in progress.
+Each round of fixes is its own commit, so the human can see what changed since
+they last looked.
 
-### ⑦ Go-ahead
+### ⑦ Tear down
 
-One sentence from the human, in their own words, saying the commit is made and
-the branch can go out. Until it arrives, ⑧ has not started. Silence is not it,
-and neither is an agent deciding the review must have gone fine.
+**The trigger is the merge itself**, not a sentence from the human. Having
+opened the pull request, the agent watches for it to land:
 
-### ⑧ Publish
+    git fetch origin
+    git merge-base --is-ancestor <name> origin/main   # true once it is in
 
-Only once ⑦ has actually arrived. From the iteration's worktree:
+or, with `gh` available, `gh pr view <n> --json state,mergedAt`. Poll gently —
+this is a human reading a diff, not a build. If the session ends before the
+merge does, teardown becomes the first thing the next session does: `git
+worktree list` against what is already in `origin/main` shows exactly which
+worktrees are owed a teardown.
 
-    git push -u origin <name>
+Once it has landed, from `main/`:
 
-Then from `main/`:
-
-    git merge <name>
-    git push origin main
-
-The branch goes up as itself *before* the merge, so the work has its own
-history on GitHub independent of what `main` ends up looking like. The merge is
-local and only then pushed — `main` on GitHub moves once, already containing
-everything.
-
-### ⑨ Tear down
-
+    git pull                       # main, up to date, symlinks re-pointed
     git worktree remove <name>     # refuses if anything is uncommitted
     git branch -d <name>           # refuses if not fully merged
+
+Pull **first**. ② pointed the container's root symlinks at the worktree that is
+about to be deleted, and the `post-merge` hook re-points them at `main/` on the
+way through — removing the worktree first leaves `CLAUDE.md`, `README.md` and
+`iteration-flow.md` at the container root dangling. If they are dangling anyway,
+`make root-links` from `main/` puts them back.
 
 Both refusals are the safety net, not an obstacle: `remove` protects work the
 human forgot to commit, and `-d` protects a branch that did not actually make it
 into `main`. If either refuses, stop and say so rather than forcing it — this is
 the one stage that destroys something, and it is not the place to improvise.
 
+The one refusal with a known cause: `-d` will refuse after a **squash** merge,
+because the branch's commit is genuinely not an ancestor of `main`. Confirm the
+work really did land — `git cherry main <name>` prints nothing, or the squashed
+commit is there in `git log main` — say which check was run, and only then use
+`-D`. A refusal for any other reason is reported, not overridden.
+
 `git branch -d` has to be run from another worktree — `main/` — because the
 branch's own worktree is gone by then. The remote branch on GitHub is left
-alone; it is the record of how the work was done.
+alone; it is the record of how the work was done, and the pull request points
+at it.
 
 ---
 

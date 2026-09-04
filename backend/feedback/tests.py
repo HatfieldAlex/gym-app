@@ -1,5 +1,7 @@
+import uuid
 from datetime import timedelta
 
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.urls import NoReverseMatch, resolve, reverse
 from django.utils import timezone
@@ -8,6 +10,7 @@ from rest_framework.test import APITestCase
 
 from settings.views import spa
 
+from .admin import FeedbackNoteAdmin
 from .models import FeedbackNote
 
 
@@ -68,11 +71,13 @@ class FeedbackNoteAPITests(APITestCase):
         # Ignored rather than obeyed: the note belongs to whoever wrote it.
         self.assertEqual(FeedbackNote.objects.get().user, self.user)
 
-    def test_neither_owner_nor_resolution_is_readable(self):
+    def test_the_owner_is_not_readable_but_the_resolution_is(self):
         self.client.force_login(self.user)
-        response = self.client.post(self.url, {'body': 'triage stays in the admin'})
+        response = self.client.post(self.url, {'body': 'triage is shared now'})
         self.assertNotIn('user', response.data)
-        self.assertNotIn('resolved_at', response.data)
+        # A note just written is outstanding, and says so.
+        self.assertIn('resolved_at', response.data)
+        self.assertIsNone(response.data['resolved_at'])
 
     def test_resolution_and_creation_time_are_not_client_settable(self):
         self.client.force_login(self.user)
@@ -87,10 +92,10 @@ class FeedbackNoteAPITests(APITestCase):
         self.assertIsNone(note.resolved_at)
         self.assertGreater(note.created_at, stamp)
 
-    def test_the_response_carries_the_five_public_fields_and_no_more(self):
+    def test_the_response_carries_the_six_public_fields_and_no_more(self):
         self.client.force_login(self.user)
         created = self.client.post(self.url, {'body': 'one sentence'})
-        fields = {'id', 'body', 'kind', 'page_path', 'created_at'}
+        fields = {'id', 'body', 'kind', 'page_path', 'created_at', 'resolved_at'}
         self.assertEqual(set(created.data), fields)
         # The same shape coming back out of the list, not just out of the write.
         listed = self.client.get(self.url)
@@ -181,3 +186,157 @@ class FeedbackNoteAPITests(APITestCase):
                 note.refresh_from_db()
                 self.assertEqual(note.body, 'mine')
         self.assertEqual(FeedbackNote.objects.count(), 1)
+
+
+class FeedbackNoteLifecycleTests(APITestCase):
+    """`close/` and `reopen/`: one column, both directions, repeats harmless."""
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.user = User.objects.create_user('lifter', password='pw')
+        cls.other = User.objects.create_user('stranger', password='pw')
+
+    def close_url(self, note):
+        return reverse('api:feedbacknote-close', args=[note.pk])
+
+    def reopen_url(self, note):
+        return reverse('api:feedbacknote-reopen', args=[note.pk])
+
+    def test_anonymous_close_and_reopen_are_rejected(self):
+        note = FeedbackNote.objects.create(user=self.user, body='not for strangers')
+        for url in (self.close_url(note), self.reopen_url(note)):
+            with self.subTest(url=url):
+                response = self.client.post(url)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        note.refresh_from_db()
+        self.assertIsNone(note.resolved_at)
+
+    def test_another_users_note_is_not_found(self):
+        stamp = timezone.now() - timedelta(days=1)
+        note = FeedbackNote.objects.create(
+            user=self.other, body='not yours', resolved_at=stamp,
+        )
+        self.client.force_login(self.user)
+        for url in (self.close_url(note), self.reopen_url(note)):
+            with self.subTest(url=url):
+                response = self.client.post(url)
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        note.refresh_from_db()
+        self.assertEqual(note.resolved_at, stamp)
+
+    def test_an_unknown_id_is_not_found(self):
+        self.client.force_login(self.user)
+        missing = uuid.uuid4()
+        for name in ('api:feedbacknote-close', 'api:feedbacknote-reopen'):
+            with self.subTest(name=name):
+                response = self.client.post(reverse(name, args=[missing]))
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_close_is_post_only(self):
+        note = FeedbackNote.objects.create(user=self.user, body='mine')
+        self.client.force_login(self.user)
+        response = self.client.get(self.close_url(note))
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        note.refresh_from_db()
+        self.assertIsNone(note.resolved_at)
+
+    def test_closing_an_open_note_stamps_it(self):
+        note = FeedbackNote.objects.create(user=self.user, body='dealt with')
+        self.client.force_login(self.user)
+        response = self.client.post(self.close_url(note))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data['resolved_at'])
+
+        note.refresh_from_db()
+        self.assertIsNotNone(note.resolved_at)
+
+    def test_closing_twice_does_not_move_the_stamp(self):
+        note = FeedbackNote.objects.create(user=self.user, body='dealt with')
+        self.client.force_login(self.user)
+        first = self.client.post(self.close_url(note))
+        second = self.client.post(self.close_url(note))
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        # C4: a repeat is the outcome the caller asked for, not an error, and
+        # the first close time survives it.
+        self.assertEqual(second.data['resolved_at'], first.data['resolved_at'])
+
+    def test_reopening_a_closed_note_clears_the_stamp(self):
+        note = FeedbackNote.objects.create(
+            user=self.user, body='back on the list', resolved_at=timezone.now(),
+        )
+        self.client.force_login(self.user)
+        response = self.client.post(self.reopen_url(note))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data['resolved_at'])
+
+        note.refresh_from_db()
+        self.assertIsNone(note.resolved_at)
+
+    def test_reopening_an_open_note_is_a_no_op(self):
+        note = FeedbackNote.objects.create(user=self.user, body='never closed')
+        self.client.force_login(self.user)
+        response = self.client.post(self.reopen_url(note))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data['resolved_at'])
+
+        note.refresh_from_db()
+        self.assertIsNone(note.resolved_at)
+
+    def test_a_reopened_note_closes_fresh(self):
+        note = FeedbackNote.objects.create(user=self.user, body='twice round')
+        self.client.force_login(self.user)
+        first = self.client.post(self.close_url(note))
+        self.client.post(self.reopen_url(note))
+        third = self.client.post(self.close_url(note))
+        # It does not remember: the second close is its own moment.
+        self.assertGreater(third.data['resolved_at'], first.data['resolved_at'])
+
+    def test_neither_action_touches_the_note_itself(self):
+        note = FeedbackNote.objects.create(
+            user=self.user,
+            body='the rest timer stops',
+            kind=FeedbackNote.Kind.BUG,
+            page_path='/current-session',
+        )
+        created_at = note.created_at
+        self.client.force_login(self.user)
+        self.client.post(self.close_url(note))
+        self.client.post(self.reopen_url(note))
+
+        note.refresh_from_db()
+        self.assertEqual(note.body, 'the rest timer stops')
+        self.assertEqual(note.kind, FeedbackNote.Kind.BUG)
+        self.assertEqual(note.page_path, '/current-session')
+        self.assertEqual(note.created_at, created_at)
+
+    def test_the_list_carries_the_resolution_of_open_and_closed_notes(self):
+        closed = FeedbackNote.objects.create(user=self.user, body='done')
+        FeedbackNote.objects.create(user=self.user, body='still outstanding')
+        self.client.force_login(self.user)
+        self.client.post(self.close_url(closed))
+
+        response = self.client.get(reverse('api:feedbacknote-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        by_id = {note['id']: note['resolved_at'] for note in response.data['results']}
+        # C6: closed notes stay in the list; the client decides what to show.
+        self.assertEqual(len(by_id), 2)
+        self.assertIsNotNone(by_id[str(closed.pk)])
+        self.assertIsNone(
+            by_id[str(FeedbackNote.objects.get(body='still outstanding').pk)],
+        )
+
+    def test_the_admin_and_the_api_write_the_same_column(self):
+        """C1: `close/` and **Mark selected notes unresolved** meet on `resolved_at`."""
+        note = FeedbackNote.objects.create(user=self.user, body='one column')
+        self.client.force_login(self.user)
+        self.client.post(self.close_url(note))
+        note.refresh_from_db()
+        self.assertIsNotNone(note.resolved_at)
+
+        admin_instance = FeedbackNoteAdmin(FeedbackNote, AdminSite())
+        admin_instance.mark_unresolved(None, FeedbackNote.objects.filter(pk=note.pk))
+
+        note.refresh_from_db()
+        self.assertIsNone(note.resolved_at)

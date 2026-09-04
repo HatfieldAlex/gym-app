@@ -6,9 +6,12 @@ from .models import FeedbackNote
 class FeedbackNoteSerializer(serializers.ModelSerializer):
     """A note as the API exposes it: the thought, and the little context around it.
 
-    `user` and `resolved_at` are absent in both directions. The view stamps the
-    owner from the session, so naming one is not a thing a client can attempt;
-    resolving is triage, which happens in the admin and never reaches the writer.
+    `user` is absent in both directions -- the view stamps the owner from the
+    session, so naming one is not a thing a client can attempt.
+
+    `resolved_at` is readable and never writable here: it is the admin's own
+    column, `null` meaning still outstanding, and the only things that write it
+    are the admin's triage actions and the viewset's `close/` and `reopen/`.
     """
 
     # allow_blank lets an empty body through the field so validate_body answers
@@ -24,5 +27,6 @@ class FeedbackNoteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FeedbackNote
-        fields = ['id', 'body', 'kind', 'page_path', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        # resolved_at last: the payload reads in the order the note's life happens.
+        fields = ['id', 'body', 'kind', 'page_path', 'created_at', 'resolved_at']
+        read_only_fields = ['id', 'created_at', 'resolved_at']

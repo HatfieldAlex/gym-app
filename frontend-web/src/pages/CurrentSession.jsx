@@ -2119,10 +2119,13 @@ export default function CurrentSession() {
 
             {/* Outside Completed exercises and at the very bottom of the page, a
                 long scroll clear of Log set: this is the one tap that closes the
-                workout, and it should take deliberate reaching for. Ending an
-                empty session is allowed and needs no special case — it lands in
-                history with no exercises, which the list and detail pages already
-                render. */}
+                workout, and it should take deliberate reaching for. Ending a
+                session with nothing logged in it deletes it rather than filing
+                it — end/ answers 204 — and this file still needs no special case
+                for that: the response is never read and leaveSession() runs
+                either way. The question is deliberately the same either way
+                too; a workout you did not start is not worth different
+                wording. */}
             <section className="end-session">
               {confirming === 'end' ? (
                 <Confirm
