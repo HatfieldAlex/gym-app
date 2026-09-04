@@ -14,7 +14,38 @@ from .serializers import (
     PerformedSetSerializer,
     TrainingSessionDetailSerializer,
     TrainingSessionSerializer,
+    closed_reason,
 )
+
+
+class ClosedIsFinalMixin:
+    """Update and delete only while the row is still writable (E6).
+
+    The create half of the same rule lives in the serializers, beside the
+    ownership re-check, so a create is refused as a field error the way an
+    unowned target already is. Here it is a `detail`, and a 400 rather than a
+    403: nothing about this is permission -- the requester owns the row, it is
+    simply finished.
+
+    Deliberately not in `get_object()`: `end/` is a POST to a detail route on an
+    exercise that is about to become closed and needs `get_object()` to keep
+    working, so guarding there would either break it or need an exception carved
+    out of it.
+    """
+
+    def refuse_if_closed(self, instance):
+        reason = closed_reason(**self.writable_target(instance))
+        if reason is not None:
+            raise ValidationError({'detail': reason})
+
+    def perform_update(self, serializer):
+        # The row as it stands, before the change is written into it.
+        self.refuse_if_closed(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self.refuse_if_closed(instance)
+        instance.delete()
 
 
 class TrainingSessionViewSet(viewsets.ModelViewSet):
@@ -92,6 +123,20 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
     def end(self, request, pk=None):
         """Close the session now. The only path that stamps `ended_at` itself."""
         session = self.get_object()
+        open_exercise = session.performed_exercises.filter(ended_at__isnull=True).first()
+        if open_exercise is not None:
+            # Closing over an open block would leave a row that can never be
+            # closed and never be corrected (E4), so it is refused rather than
+            # repaired. First of the three guards because it is the only one a
+            # user could plausibly hit, and worded as what to do about it.
+            return Response(
+                {
+                    'detail': 'Finish the exercise you are recording before ending the session.',
+                    # So a client that has lost track of it can just load it.
+                    'open_exercise': str(open_exercise.pk),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if session.ended_at is not None:
             return Response(
                 {'detail': 'This session has already ended.'},
@@ -110,10 +155,14 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(session).data)
 
 
-class PerformedExerciseViewSet(viewsets.ModelViewSet):
+class PerformedExerciseViewSet(ClosedIsFinalMixin, viewsets.ModelViewSet):
     """`/api/performed-exercises/`, optionally filtered by `?training_session=<uuid>`."""
 
     serializer_class = PerformedExerciseSerializer
+
+    @staticmethod
+    def writable_target(instance):
+        return {'performed_exercise': instance}
 
     # Three past sessions is the history the zone shows (Z7); the cap is there
     # so a hand-written URL cannot ask for the whole training log.
@@ -140,6 +189,29 @@ class PerformedExerciseViewSet(viewsets.ModelViewSet):
         if self.action == 'history':
             return PerformedExerciseHistorySerializer
         return super().get_serializer_class()
+
+    def perform_create(self, serializer):
+        # The session's own "one at a time" a level down: supersets are out of
+        # scope, so "the exercise I am on" has to be as unambiguous as "the
+        # current session" already is (E3).
+        open_exercise = (
+            PerformedExercise.objects
+            .filter(
+                # Out of validated_data, so it has already been through
+                # `validate_training_session` and is known to be the requester's.
+                # Ownership stays the serializer's job.
+                training_session=serializer.validated_data['training_session'],
+                ended_at__isnull=True,
+            )
+            .first()
+        )
+        if open_exercise is not None:
+            raise ValidationError({
+                'detail': 'An exercise is already open in this session.',
+                # So a client that has lost track of it can just load it.
+                'open_exercise': str(open_exercise.pk),
+            })
+        serializer.save()
 
     @staticmethod
     def _uuid_param(params, name, required=False):
@@ -210,11 +282,41 @@ class PerformedExerciseViewSet(viewsets.ModelViewSet):
 
         return Response(self.get_serializer(queryset[:limit], many=True).data)
 
+    @action(detail=True, methods=['post'])
+    def end(self, request, pk=None):
+        """Close the exercise now. The only path that stamps `ended_at` itself.
 
-class PerformedSetViewSet(viewsets.ModelViewSet):
+        The twin of `training-sessions/{id}/end/`, with one extra outcome: an
+        exercise nobody logged a set into is not a block, so closing it deletes
+        the row (E5) and answers 204 -- the only delete this makes on the user's
+        behalf, and it cascades to nothing because there is nothing under it.
+        The two success shapes are different on purpose: 200 means "this block is
+        now in your log", 204 means "there was nothing in it".
+        """
+        performed_exercise = self.get_object()
+        if performed_exercise.ended_at is not None:
+            return Response(
+                {'detail': 'This exercise has already been logged.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not performed_exercise.performed_sets.exists():
+            performed_exercise.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        performed_exercise.ended_at = timezone.now()
+        performed_exercise.save(update_fields=['ended_at'])
+        return Response(self.get_serializer(performed_exercise).data)
+
+
+class PerformedSetViewSet(ClosedIsFinalMixin, viewsets.ModelViewSet):
     """`/api/performed-sets/`, optionally filtered by `?performed_exercise=<uuid>`."""
 
     serializer_class = PerformedSetSerializer
+
+    @staticmethod
+    def writable_target(instance):
+        # The set itself has no state; the block it is in and that block's
+        # session are what say whether it can still be corrected.
+        return {'performed_exercise': instance.performed_exercise}
 
     def get_queryset(self):
         queryset = (

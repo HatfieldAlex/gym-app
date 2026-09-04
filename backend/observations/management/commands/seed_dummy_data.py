@@ -149,6 +149,25 @@ def restore_logged_at(instances):
     return instances
 
 
+def finished_at(instance, when):
+    """Remember when a performed exercise should claim it was closed.
+
+    Parked out of reach for the same reason as `logged_at`, but for a different
+    one of the two columns the check constraint compares: at bulk_create time
+    created_at is still the wall clock, so a block that finished in March would
+    be rejected against a created_at of today. It goes in on the bulk_update
+    that puts created_at back, where the pair is consistent again.
+    """
+    instance._finished_at = when
+    return instance
+
+
+def restore_finished_at(instances):
+    for instance in instances:
+        instance.ended_at = instance._finished_at
+    return instances
+
+
 class Command(BaseCommand):
     help = 'Fill the database with dummy athletes, sessions, sets and reps.'
 
@@ -381,6 +400,15 @@ class Command(BaseCommand):
                                 rep_index=index + 1,
                             ))
 
+                    # Seeded work is finished work: a null ended_at reads as "in
+                    # progress", and the API refuses a new exercise while one is
+                    # open, so a history of open blocks would make the app
+                    # unusable rather than just look wrong. `minute` has not moved
+                    # since the last set, so this is that set's stamp, falling
+                    # back to the exercise's own -- the rule migration 0005 used
+                    # to close the history that already existed.
+                    finished_at(performed, started_at + timedelta(minutes=minute))
+
                 # The last session of the densest athlete is still running; every
                 # other one finished when its work did.
                 session.ended_at = started_at + timedelta(
@@ -392,6 +420,9 @@ class Command(BaseCommand):
 
         sessions.sort(key=lambda session: session.started_at)
         if leave_open:
+            # The session is what is left in progress, not an exercise inside it:
+            # every seeded block is closed, so the app opens on the chooser with
+            # the session's finished work behind it, and End session works.
             open_session = sessions[-1]
             # Only if nobody else already holds the one open slot — with --append
             # there may be a session in progress from a previous run.
@@ -406,13 +437,16 @@ class Command(BaseCommand):
         # Put the intended created_at back over the wall clock bulk_create just
         # stamped, and write it. This matters beyond cosmetics: created_at is the
         # order of exercises within a session and of sets within an exercise, and
-        # a whole seeded history sharing one timestamp has no order at all.
-        for model, rows in (
-            (TrainingSession, sessions),
-            (PerformedExercise, exercises),
-            (PerformedSet, sets),
+        # a whole seeded history sharing one timestamp has no order at all. The
+        # exercises' ended_at rides along in the same pass, for the reason
+        # `finished_at` gives.
+        restore_finished_at(exercises)
+        for model, rows, fields in (
+            (TrainingSession, sessions, ['created_at']),
+            (PerformedExercise, exercises, ['created_at', 'ended_at']),
+            (PerformedSet, sets, ['created_at']),
         ):
-            model.objects.bulk_update(restore_logged_at(rows), ['created_at'], batch_size=500)
+            model.objects.bulk_update(restore_logged_at(rows), fields, batch_size=500)
 
         return {
             'sessions': len(sessions),

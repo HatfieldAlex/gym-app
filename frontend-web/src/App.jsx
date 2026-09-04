@@ -28,8 +28,15 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={<Private><Home /></Private>} />
+          {/* A prefix match, and one <Route> for both addresses: the exercise
+              lives at /current-session/exercise and the page reads the address
+              to know which of the two it is showing (E9). Two routes rendering
+              <CurrentSession /> would unmount and remount it on every step
+              between the workout and the exercise, throwing away the session it
+              has loaded and re-fetching `current/` — a spinner between every
+              set block. */}
           <Route
-            path="/current-session"
+            path="/current-session/*"
             element={<Private><CurrentSession /></Private>}
           />
           <Route

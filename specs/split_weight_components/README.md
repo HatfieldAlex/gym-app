@@ -26,7 +26,7 @@ chunk that comes out wrong can be redone without unpicking the ones after it.
 | 02 | [The API carries the loading](02-backend-api.md) — the fields on the entry, the one-way `loading/` action, the mirror onto performed exercises, tests | `backend/catalog/`, `observations/serializers.py` | 01 |
 | 03.0 | [The expression in the current session](03.0-the-expression-in-the-zone.md) — a new `sets.js`, and the zone's list, Last time and Earlier | new `src/sets.js`, `CurrentSession.jsx` | 02 |
 | 03.5 | [The expression in session detail](03.5-the-expression-in-session-detail.md) — the fourth screen, in its one column | `TrainingSessionDetail.jsx`, `sets.js` | 02, 03.0 |
-| 04 | [One box, per side](04-one-box-per-side.md) — the zone's log form, the live total, the multiplied-up send | `CurrentSession.jsx`, `sets.js`, `styles.css` | 03.0 |
+| 04 | [One box, per side](04-one-box-per-side.md) — the zone's log form, the live total, the multiplied-up send, and the draft it must not swallow | `CurrentSession.jsx`, `sets.js`, `styles.css` | 03.0 |
 | 05 | [Correcting a set](05-editing-a-set-per-side.md) — the stored total divided back for editing | `CurrentSession.jsx` | 04 |
 | 06 | [Adding an exercise asks](06-the-add-form-asks.md) — two fields as a shared component, in both places the form stands | new `components/LoadingFields.jsx`, `AddExerciseForm.jsx`, `styles.css` | 02 |
 | 07 | [Asking once](07-asking-once.md) — the zone's fourth state, for a movement nobody has answered | `CurrentSession.jsx`, `styles.css` | 02, 04, 06 |
@@ -90,6 +90,51 @@ Repeated in every chunk that goes near them, and worth reading once here:
    — a stack, a sled, a pair of dumbbells. `NULL` is a movement nobody has been
    asked about, and it behaves exactly as the app behaved yesterday.
 
+## 04 and 07 were rewritten after `main`'s zone rework
+
+Chunks 01–06 were built, and then `main` landed
+[`3c0cab3` "solidified exercise zone"](../exercise_lifecycle/README.md) — an
+iteration of its own that made an exercise a **row on the server** rather than a
+`useState` on the page (+548/−222 in `CurrentSession.jsx`). Merging it in
+conflicted with 04's and 07's landing spots, and re-reading the specs against
+the new file showed that both had been written against code that no longer
+exists. They were rewritten before anything was rebuilt; 00-context's frontend
+references and its "Where the derivation lives" argument went with them.
+
+What actually moved:
+
+| 04 and 07 assumed | The zone is now |
+|---|---|
+| `heldId` state, and `held` found in the page's copy of the catalogue | `openExercise` — the one `performed_exercise` in the session with `ended_at === null` |
+| the zone's loading read off a **catalogue row** | read off the **open block**, via `loadingOf(openExercise)` |
+| `<form className="log-set" onSubmit={logSet}>` | a `<div>`, and `logSet()` takes no event — **Enter must not log a set** |
+| a plain weight `<input>` | an input carrying `data-restored` and routing every keystroke through `typeWeight`, so a half-typed set survives a reload |
+| `releaseExercise()`, a local function | `closeExerciseRow()` — a request, with `closing` and `closeError` |
+| three ways out of an exercise | one, reading `Log exercise` or `Change exercise` |
+
+Two consequences worth naming, because they are what the rewrites are for:
+
+- **Chunk 04 must not let `WeightEntry` own a bare `<input>`.** A component that
+  hardcodes its own `onChange` and is handed `setWeight` looks right, renders
+  right, and silently deletes the draft feature the last iteration built. The
+  chunk now specifies the props so the per-side prefix and the draft mirror both
+  survive.
+- **Chunk 07's old re-render mechanism does not work at all.** It swapped the
+  answered row into `catalogue` and let `held` re-derive; the zone does not read
+  the catalogue any more, so that would have left the panel sitting there after a
+  successful save. The answer is now folded onto the session's performed-exercise
+  rows — every block of that movement, not just the open one — and the panel's
+  way out is the asynchronous `closeExerciseRow`.
+
+The **skip stays** (W10, directed at build time). What is new around it is W12:
+the question is asked only into a block with no sets in it, because an open
+exercise now survives a reload and a skip is stored nowhere, so without that rule
+every reload would put the question back in front of somebody who already
+declined it.
+
+**Chunk 05 was checked and needed no change of mechanism** — only line numbers,
+and one argument in it that is now weaker than it was and says so.
+
 ## Four things AGREED.md left open
 
 00-context answers them so the build has firm ground, marks each one ⚑, and says
@@ -105,6 +150,9 @@ what changing it would cost. They are the rows worth the human's eye at review:
   **is** skippable in one tap; a skip stores nothing and the movement is asked
   about again next time. The first draft of the spec had no Skip, which would
   have let this feature stand between somebody and their workout.
+- **W12** — also resolved at build time, and only reachable once an exercise is a
+  row on the server: the question is asked **only into a block with no sets in
+  it**. It is what keeps W10 true across a reload.
 
 ## Deliberately out of scope
 

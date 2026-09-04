@@ -22,6 +22,9 @@ class SpaRoutingTests(SimpleTestCase):
             '/',
             '/login',
             '/exercises-catelog',
+            # A deep link into the exercise zone: the app's only child route
+            # that is not an id, and the one a reload mid-exercise lands on.
+            '/current-session/exercise',
             # Trailing slashes, as the server-rendered pages used to publish them.
             '/exercises-catelog/',
             '/exercises-catelog/6f1f6dcb-6c9d-4a2e-9f3b-2a1b8c5d4e3f/',

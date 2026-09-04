@@ -55,7 +55,7 @@ HEADERS = {
     ],
     'tables/performed_exercises.csv': [
         'id', 'training_session_id', 'exercise_definition_id',
-        'exercise_prescription_id', 'created_at',
+        'exercise_prescription_id', 'created_at', 'ended_at',
     ],
     'tables/performed_reps.csv': ['id', 'performed_set_id', 'rep_index'],
     'tables/performed_sets.csv': [

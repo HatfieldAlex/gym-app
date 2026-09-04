@@ -111,7 +111,7 @@ def training_session_rows(user):
 
 PERFORMED_EXERCISES_HEADER = (
     'id', 'training_session_id', 'exercise_definition_id',
-    'exercise_prescription_id', 'created_at',
+    'exercise_prescription_id', 'created_at', 'ended_at',
 )
 
 
@@ -127,6 +127,7 @@ def performed_exercise_rows(user):
             row.exercise_definition_id,
             row.exercise_prescription_id,
             row.created_at,
+            row.ended_at,
         )]
 
 

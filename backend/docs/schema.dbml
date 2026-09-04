@@ -66,6 +66,7 @@ Table observations_performedexercise {
   exercise_definition_id   uuid        [not null, ref: > catalog_exercisedefinition.id, note: 'on_delete=PROTECT']
   exercise_prescription_id uuid        [null, ref: > protocols_exerciseprescription.id, note: 'on_delete=SET_NULL']
   created_at               timestamptz [not null, note: 'set to now() on insert (auto_now_add)']
+  ended_at                 timestamptz [null, note: 'null while the exercise is being recorded']
 
   indexes {
     training_session_id [note: 'implicit: Django indexes every ForeignKey column']
@@ -74,7 +75,7 @@ Table observations_performedexercise {
     (training_session_id, created_at) [name: 'perfex_session_created_idx']
   }
 
-  Note: 'One movement as actually performed in one session. Many per TrainingSession; many can reference the same ExerciseDefinition.'
+  Note: 'One movement as actually performed in one session. Many per TrainingSession; many can reference the same ExerciseDefinition. CHECK perfex_ended_after_created: (ended_at IS NULL OR ended_at >= created_at)'
 }
 
 Table observations_performedrep {

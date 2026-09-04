@@ -3,6 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- The manifest's theme_color is one colour; the status bar should follow
+         the system theme like the rest of the app does (styles.css sets
+         color-scheme: light dark and paints no background of its own). A
+         media-qualified pair overrides the manifest per-document, in the
+         browser and in the installed app alike. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111111" />
+
     <title>Gym App</title>
   </head>
   <body>

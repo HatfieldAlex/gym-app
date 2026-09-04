@@ -82,6 +82,11 @@ class PerformedExercise(models.Model):
     )
     # Also the order within the session.
     created_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='null while the exercise is being recorded',
+    )
 
     class Meta:
         verbose_name = 'performed exercise'
@@ -92,6 +97,18 @@ class PerformedExercise(models.Model):
             models.Index(
                 fields=['training_session', 'created_at'],
                 name='perfex_session_created_idx',
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                # The session's guard one level down: an open exercise (null
+                # ended_at) passes; a closed one may not have finished before it
+                # began.
+                condition=(
+                    models.Q(ended_at__isnull=True)
+                    | models.Q(ended_at__gte=models.F('created_at'))
+                ),
+                name='perfex_ended_after_created',
             ),
         ]
 
