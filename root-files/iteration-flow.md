@@ -45,8 +45,9 @@ the merge has actually landed.
     ┌────────────────────────────────▼─────────────────────────────────┐
     │ ② WORKTREE                                              subagent │
     │                                                                  │
-    │   git worktree add <name> -b <name> main, beside the others,     │
-    │   then make install in it. The layout does the rest.             │
+    │   git fetch origin first — local main is not kept in sync.       │
+    │   git worktree add <name> -b <name> origin/main, beside the      │
+    │   others, then make install in it. The layout does the rest.     │
     └────────────────────────────────┬─────────────────────────────────┘
                    an empty branch with a working checkout
     ┌────────────────────────────────▼─────────────────────────────────┐
@@ -146,7 +147,8 @@ the branch, and — in `snake_case` — the specs directory. So
 
 From the container (the directory holding `.bare/` and every worktree):
 
-    git worktree add <name> -b <name> main
+    git fetch origin
+    git worktree add <name> -b <name> origin/main
     cd <name> && make install
 
 `make install` builds that branch's own `.venv/` and `node_modules/`, and pulls
@@ -154,10 +156,34 @@ in `make root-links` on the way through. See [README.md](README.md) for why each
 branch owns its build state. `make hooks` is already installed and covers new
 worktrees automatically — it does not need re-running.
 
-Branch from `main`, and from `main` as it is *now*: `git fetch origin` first if
-anything might have merged since. A branch cut from a stale `main` turns into a
-conflicted pull request at ⑥, which is the one place this flow cannot afford
-friction.
+**Cut the branch from `origin/main`, not from `main`.** They are two different
+refs and *nothing keeps them equal on its own*. Fetching moves `origin/main` and
+only `origin/main` — the local `main` branch stays exactly where it was. Local
+`main` advances only when a person or an agent stands in the `main/` worktree
+and pulls; ⑦ does that, but only for an iteration that was torn down in that
+session. So after a pull request that merged on GitHub and was never torn down
+here, or after anyone pushed to `main` from anywhere else, local `main` is
+quietly behind. It does not look behind: `git status` in `main/` says nothing,
+because it is comparing against a stale `origin/main` until the next fetch.
+
+Which is why the fetch is not conditional. "Fetch first if anything might have
+merged since" asks an agent to guess at something it cannot see; fetch every
+time, then name `origin/main` as the start point so the branch is cut from what
+was just fetched rather than from whatever the local pointer happens to say.
+Then confirm it, and say what came back:
+
+    git rev-list --count main..origin/main   # 0 → local main was already current
+    git log --oneline -1 origin/main         # the commit the branch is cut from
+
+A non-zero count is not a failure — it means local `main` was stale and starting
+from `origin/main` stepped around it. It is still worth reporting, because
+`main/` itself is *still* behind and stays behind until someone pulls there.
+
+A branch cut from a stale `main` turns into a conflicted pull request at ⑥,
+which is the one place this flow cannot afford friction. The same applies to a
+worktree that has sat through somebody else's merge: if ④ ran long, fetch again
+and bring `origin/main` into the branch before ⑤, rather than handing the human
+a conflict to untangle inside their review.
 
 The worktree is switchable with `wt <name>` the moment it exists.
 
