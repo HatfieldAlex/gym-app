@@ -121,7 +121,14 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def end(self, request, pk=None):
-        """Close the session now. The only path that stamps `ended_at` itself."""
+        """Close the session now. The only path that stamps `ended_at` itself.
+
+        The twin of `performed-exercises/{id}/end/`, with the same extra
+        outcome one level up: a session nobody logged an exercise into is not a
+        workout, so closing it deletes the row (S3) and answers 204. The two
+        success shapes are different on purpose: 200 means "this workout is now
+        in your log", 204 means "there was nothing in it".
+        """
         session = self.get_object()
         open_exercise = session.performed_exercises.filter(ended_at__isnull=True).first()
         if open_exercise is not None:
@@ -150,6 +157,17 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
                 {'detail': 'This session starts in the future, so it cannot be ended now.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if not session.performed_exercises.exists():
+            # The delete replaces the stamp, so it goes exactly where the stamp
+            # goes: last, after the three refusals above, which are answers
+            # about *when* a session may be closed rather than about what is in
+            # it. An already-ended session is still 400 (ending is not a way to
+            # delete something recorded -- that is Discard), and a future-dated
+            # one is still 400 for a reason that has nothing to do with being
+            # empty. The open-exercise guard cannot fire here at all: an open
+            # exercise is a PerformedExercise row.
+            session.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
         session.ended_at = now
         session.save(update_fields=['ended_at'])
         return Response(self.get_serializer(session).data)
